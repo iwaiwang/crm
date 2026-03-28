@@ -135,13 +135,10 @@ async def update_expense(expense_id: str, expense: ExpenseUpdate, db: AsyncSessi
 @router.delete("/{expense_id}")
 async def delete_expense(expense_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('cashflow'))):
     """删除支出"""
-    result = await db.execute(select(Expense).where(Expense.id == expense_id))
-    db_expense = result.scalar_one_or_none()
+    from sqlalchemy import text
 
-    if not db_expense:
-        raise HTTPException(status_code=404, detail="支出记录不存在")
-
-    await db.delete(db_expense)
+    # 使用原始 SQL 删除避免 SQLAlchemy 级联问题
+    await db.execute(text("DELETE FROM expenses WHERE id = :eid"), {"eid": expense_id})
     await db.commit()
 
     return {"message": "删除成功"}

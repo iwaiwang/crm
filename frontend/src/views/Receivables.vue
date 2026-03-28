@@ -71,7 +71,12 @@
     </el-card>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog v-model="showDialog" :title="formData.id ? '编辑应收' : '新增应收'" width="500px">
+    <el-drawer
+      v-model="showDialog"
+      :title="formData.id ? '编辑应收' : '新增应收'"
+      size="520px"
+      direction="rtl"
+    >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="90px">
         <el-form-item label="关联合同" prop="contract_id">
           <el-select v-model="formData.contract_id" placeholder="请选择合同" style="width: 100%" @change="handleContractChange">
@@ -92,7 +97,7 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 登记收款对话框 -->
     <el-dialog v-model="showPaymentDlg" title="登记收款" width="450px">

@@ -150,7 +150,7 @@ async def upload_avatar(
 ):
     """上传头像"""
     # 创建上传目录
-    upload_dir = os.path.join(os.getcwd(), "uploads", "avatars")
+    upload_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
     os.makedirs(upload_dir, exist_ok=True)
 
     # 生成文件名

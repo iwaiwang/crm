@@ -34,3 +34,8 @@ export function createStockMove(data) {
 export function getProductStockMoves(id) {
   return request.get(`/products/${id}/stock-moves`)
 }
+
+// 批量删除产品
+export function batchDeleteProducts(ids) {
+  return request.post('/products/batch-delete', ids)
+}

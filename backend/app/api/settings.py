@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional, List
 import json
+import os
 
-from app.database import get_db
+from app.database import DATA_DIR, get_db
 from app.models.setting import Setting
 from app.models.user import User
 from app.schemas.setting import (
@@ -16,8 +17,17 @@ from app.schemas.setting import (
     SettingKeys,
 )
 from app.api.auth import require_menu_permission
+from app.config import settings
 
 router = APIRouter()
+
+
+def _get_database_directory() -> str:
+    return os.path.abspath(DATA_DIR)
+
+
+def _get_upload_directory() -> str:
+    return os.path.abspath(settings.UPLOAD_DIR)
 
 
 # 预定义设置项的默认值
@@ -28,7 +38,8 @@ DEFAULT_SETTINGS = {
     SettingKeys.COMPANY_ADDRESS: {"value": "", "value_type": "string", "description": "公司地址", "is_public": True},
     SettingKeys.COMPANY_PHONE: {"value": "", "value_type": "string", "description": "公司电话", "is_public": True},
     SettingKeys.COMPANY_EMAIL: {"value": "", "value_type": "string", "description": "公司邮箱", "is_public": True},
-    SettingKeys.DATABASE_DIRECTORY: {"value": "", "value_type": "string", "description": "数据库目录", "is_public": False},
+    SettingKeys.DATABASE_DIRECTORY: {"value": _get_database_directory(), "value_type": "string", "description": "数据库目录", "is_public": False},
+    SettingKeys.UPLOAD_DIRECTORY: {"value": _get_upload_directory(), "value_type": "string", "description": "文件上传目录", "is_public": False},
     SettingKeys.OCR_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 OCR 功能", "is_public": False},
     SettingKeys.AI_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 AI 功能", "is_public": False},
 }
@@ -38,9 +49,12 @@ async def init_default_settings(db: AsyncSession):
     """初始化默认设置项"""
     for key, config in DEFAULT_SETTINGS.items():
         result = await db.execute(select(Setting).where(Setting.key == key))
-        if not result.scalar_one_or_none():
+        db_setting = result.scalar_one_or_none()
+        if not db_setting:
             db_setting = Setting(key=key, **config)
             db.add(db_setting)
+        elif key in {SettingKeys.DATABASE_DIRECTORY, SettingKeys.UPLOAD_DIRECTORY} and not (db_setting.value or "").strip():
+            db_setting.value = config["value"]
     await db.commit()
 
 
@@ -201,3 +215,79 @@ async def init_settings(db: AsyncSession = Depends(get_db), current_user: User =
     """初始化默认设置项"""
     await init_default_settings(db)
     return {"message": "设置项初始化成功"}
+
+
+@router.get("/system/upload-dir", response_model=dict)
+@router.get("/meta/upload-dir", response_model=dict)
+async def get_upload_directory(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('settings')),
+):
+    """获取实际的文件上传目录"""
+    return {
+        "database_directory": _get_database_directory(),
+        "upload_directory": _get_upload_directory(),
+        "avatars_directory": os.path.join(_get_upload_directory(), "avatars"),
+        "contracts_directory": os.path.join(_get_upload_directory(), "contracts"),
+        "invoices_directory": os.path.join(_get_upload_directory(), "invoices"),
+    }
+
+
+@router.post("/cleanup-files", response_model=dict)
+async def cleanup_unused_files(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('settings')),
+):
+    """清理未使用的上传文件"""
+    from app.models.contract_file import ContractFile
+
+    upload_dir = settings.UPLOAD_DIR
+    avatars_dir = os.path.join(upload_dir, "avatars")
+    contracts_dir = os.path.join(upload_dir, "contracts")
+
+    deleted_count = 0
+    deleted_size = 0
+
+    # 清理头像文件
+    if os.path.exists(avatars_dir):
+        # 获取所有用户头像
+        result = await db.execute(select(User.avatar).where(User.avatar.isnot(None)))
+        user_avatars = [r[0] for r in result.all() if r[0]]
+        used_avatar_files = set()
+        for avatar in user_avatars:
+            if avatar.startswith("/uploads/avatars/"):
+                used_avatar_files.add(avatar.replace("/uploads/avatars/", ""))
+
+        # 删除未使用的头像
+        for filename in os.listdir(avatars_dir):
+            if filename not in used_avatar_files:
+                filepath = os.path.join(avatars_dir, filename)
+                if os.path.isfile(filepath):
+                    deleted_size += os.path.getsize(filepath)
+                    os.remove(filepath)
+                    deleted_count += 1
+
+    # 清理合同文件
+    if os.path.exists(contracts_dir):
+        result = await db.execute(select(ContractFile.file_url).where(ContractFile.file_url.isnot(None)))
+        contract_urls = [r[0] for r in result.all() if r[0]]
+        used_contract_files = set()
+        for url in contract_urls:
+            if url.startswith("/uploads/contracts/"):
+                used_contract_files.add(url.replace("/uploads/contracts/", ""))
+
+        for filename in os.listdir(contracts_dir):
+            if filename not in used_contract_files:
+                filepath = os.path.join(contracts_dir, filename)
+                if os.path.isfile(filepath):
+                    deleted_size += os.path.getsize(filepath)
+                    os.remove(filepath)
+                    deleted_count += 1
+
+    # 注意：不清理发票文件，因为发票可以不关联合同独立存在
+
+    return {
+        "message": "清理完成",
+        "deleted_count": deleted_count,
+        "deleted_size": deleted_size,
+    }

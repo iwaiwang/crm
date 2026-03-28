@@ -41,3 +41,11 @@ export function getInvoiceReceivables(id) {
 export function registerPaymentFromInvoice(id, data) {
   return request.post(`/invoices/${id}/register-payment`, data)
 }
+
+export function previewAiInvoiceImport(fileId) {
+  return request.post('/invoices/ai-import/preview', { file_id: fileId })
+}
+
+export function confirmAiInvoiceImport(data) {
+  return request.post('/invoices/ai-import/confirm', data)
+}

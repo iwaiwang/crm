@@ -62,7 +62,7 @@ class Expense(Base):
 
     # 关联关系
     supplier = relationship("Customer", back_populates="expenses")
-    invoice = relationship("Invoice", back_populates="expense")
+    invoice = relationship("Invoice", back_populates="expense", passive_deletes=True)
     contract = relationship("Contract", back_populates="expenses")
 
     def __repr__(self):

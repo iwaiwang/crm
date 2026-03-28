@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+from pydantic import field_validator
 import os
 
 
@@ -35,6 +36,19 @@ class Settings(BaseSettings):
 
     # Webhook API Key (OpenClaw 调用时使用)
     WEBHOOK_API_KEY: Optional[str] = None
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug(cls, value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", ""}:
+                return False
+        return value
 
     class Config:
         env_file = ".env"

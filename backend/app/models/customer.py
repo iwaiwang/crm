@@ -33,10 +33,11 @@ class Customer(Base):
     )
 
     # 关联关系
-    contracts = relationship("Contract", back_populates="customer", cascade="all, delete-orphan")
-    projects = relationship("Project", back_populates="customer", cascade="all, delete-orphan")
-    incomes = relationship("Income", back_populates="customer", cascade="all, delete-orphan")
-    expenses = relationship("Expense", back_populates="supplier", cascade="all, delete-orphan")
+    # 注意：incomes 和 expenses 不使用级联删除，由 API 手动处理
+    contracts = relationship("Contract", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
+    projects = relationship("Project", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
+    incomes = relationship("Income", back_populates="customer", passive_deletes=True)
+    expenses = relationship("Expense", back_populates="supplier", passive_deletes=True)
 
     def __repr__(self):
         return f"<Customer {self.name}>"

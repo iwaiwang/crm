@@ -64,3 +64,8 @@ export function getProjectTasks(projectId) {
 export function updateTask(projectId, taskId, data) {
   return request.put(`/projects/${projectId}/tasks/${taskId}`, data)
 }
+
+// 批量删除项目
+export function batchDeleteProjects(ids) {
+  return request.post('/projects/batch-delete', ids)
+}

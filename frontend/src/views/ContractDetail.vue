@@ -360,7 +360,12 @@
     </el-dialog>
 
     <!-- 新增应收款对话框 -->
-    <el-dialog v-model="showAddReceivableDlg" title="新增应收款" width="550px">
+    <el-drawer
+      v-model="showAddReceivableDlg"
+      title="新增应收款"
+      size="580px"
+      direction="rtl"
+    >
       <el-form :model="receivableForm" :rules="receivableRules" ref="receivableFormRef" label-width="100px">
         <!-- 合同参考信息 -->
         <el-alert
@@ -418,7 +423,7 @@
         <el-button @click="showAddReceivableDlg = false">取消</el-button>
         <el-button type="primary" @click="submitReceivable" :loading="receivableSubmitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 登记收款对话框 -->
     <el-dialog v-model="showPaymentDlgFlag" title="登记收款" width="450px">
@@ -454,7 +459,12 @@
     </el-dialog>
 
     <!-- 新增发票对话框 -->
-    <el-dialog v-model="showAddInvoiceDlg" title="新增发票" width="600px">
+    <el-drawer
+      v-model="showAddInvoiceDlg"
+      title="新增发票"
+      size="620px"
+      direction="rtl"
+    >
       <el-form :model="invoiceForm" :rules="invoiceRules" ref="invoiceFormRef" label-width="100px">
         <el-form-item label="发票号码" prop="invoice_no">
           <el-input v-model="invoiceForm.invoice_no" placeholder="请输入发票号码" />
@@ -534,7 +544,7 @@
         <el-button @click="showAddInvoiceDlg = false">取消</el-button>
         <el-button type="primary" @click="submitInvoice" :loading="invoiceSubmitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
@@ -744,6 +754,7 @@ const loadContract = async () => {
 
 // 同步合同数据到表单
 const syncFormFromContract = () => {
+  const primaryFile = contract.value.primary_file || contract.value.files?.[0] || null
   formData.contract_no = contract.value.contract_no || ''
   formData.name = contract.value.name || ''
   formData.customer_id = contract.value.customer_id || ''
@@ -753,16 +764,17 @@ const syncFormFromContract = () => {
   formData.status = contract.value.status || 'signed'
   formData.payment_terms = contract.value.payment_terms || ''
   formData.remark = contract.value.remark || ''
-  formData.file_id = contract.value.file_id || ''
-  formData.file_url = contract.value.file_url || ''
+  formData.file_id = primaryFile?.file_id || ''
+  formData.file_url = primaryFile?.file_url || ''
 
   // 设置文件信息
-  if (contract.value.file_id && contract.value.file_url) {
+  if (primaryFile?.file_id && primaryFile?.file_url) {
     fileInfo.value = {
-      id: contract.value.file_id,
-      name: contract.value.file_path || contract.value.contract_no,
-      url: contract.value.file_url,
-      type: 'pdf',
+      id: primaryFile.file_id,
+      name: primaryFile.file_name || contract.value.contract_no,
+      url: primaryFile.file_url,
+      type: primaryFile.file_type || 'pdf',
+      size: primaryFile.file_size || 0,
     }
   } else {
     fileInfo.value = null
@@ -845,6 +857,11 @@ const saveContract = async () => {
           dataToSubmit[key] = null
         }
       })
+
+      if (!isCreateMode.value) {
+        delete dataToSubmit.file_id
+        delete dataToSubmit.file_url
+      }
 
       if (isCreateMode.value) {
         await createContract(dataToSubmit)

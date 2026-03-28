@@ -13,8 +13,10 @@ import json
 import httpx
 import base64
 import uuid
+import zipfile
 from typing import Optional, Dict, Any
 from datetime import datetime
+from xml.etree import ElementTree
 
 
 # AI 服务配置
@@ -503,6 +505,37 @@ class AIService:
         except Exception as e:
             raise Exception(f"PDF 文本提取失败：{str(e)}")
 
+    async def extract_text_from_docx(self, file_path: str) -> str:
+        """从 docx 提取文本。"""
+        try:
+            with zipfile.ZipFile(file_path) as docx_zip:
+                xml_content = docx_zip.read("word/document.xml")
+            root = ElementTree.fromstring(xml_content)
+            texts = []
+            for node in root.iter():
+                if node.tag.endswith("}t") and node.text:
+                    texts.append(node.text)
+                elif node.tag.endswith("}p"):
+                    texts.append("\n")
+            return "".join(texts).strip()
+        except KeyError as exc:
+            raise Exception("docx 文件结构不完整，无法提取正文") from exc
+        except zipfile.BadZipFile as exc:
+            raise Exception("文件不是有效的 docx 格式") from exc
+        except Exception as exc:
+            raise Exception(f"DOCX 文本提取失败：{str(exc)}") from exc
+
+    async def extract_text_from_contract_file(self, file_path: str, file_type: str) -> str:
+        """按文件类型提取合同文本。"""
+        normalized_type = (file_type or "").lower()
+        if normalized_type == "pdf":
+            return await self.extract_text_from_pdf(file_path)
+        if normalized_type == "docx":
+            return await self.extract_text_from_docx(file_path)
+        if normalized_type == "doc":
+            raise Exception("暂不支持直接解析 .doc 文件，请先另存为 .docx 或 PDF 后重试")
+        raise Exception(f"暂不支持解析 .{normalized_type} 合同文件")
+
     async def parse_contract(self, file_path: str, file_type: str) -> Dict[str, Any]:
         """
         解析合同
@@ -516,27 +549,25 @@ class AIService:
         """
         if self.service_type == "openai_compatible":
             # 使用 OpenAI 兼容 API
-            with open(file_path, "rb") as f:
-                file_data = f.read()
-
-            # 如果是 PDF，先提取文本
-            if file_type == "pdf":
-                text = await self.extract_text_from_pdf(file_path)
+            normalized_type = (file_type or "").lower()
+            if normalized_type in {"pdf", "doc", "docx"}:
+                text = await self.extract_text_from_contract_file(file_path, normalized_type)
                 if not text:
-                    return {"error": "无法从 PDF 中提取文本", "confidence": 0}
+                    return {"error": "无法从合同文件中提取文本", "confidence": 0}
 
-                # 使用文本模式分析
                 result = await self.openai_service.chat(CONTRACT_SYSTEM_PROMPT, text)
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return self._parse_json_response(content)
-            else:
-                # 图片使用视觉模型
+            if normalized_type in {"jpg", "jpeg", "png"}:
+                with open(file_path, "rb") as f:
+                    file_data = f.read()
                 result = await self.openai_service.chat_with_vision(CONTRACT_SYSTEM_PROMPT, file_data)
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return self._parse_json_response(content)
+            raise Exception(f"暂不支持解析 .{normalized_type} 合同文件")
         else:
             # Ollama 备用方案
-            text = await self.extract_text_from_pdf(file_path)
+            text = await self.extract_text_from_contract_file(file_path, file_type)
             if not text:
                 return {"error": "无法从文件中提取文本", "confidence": 0}
             return {

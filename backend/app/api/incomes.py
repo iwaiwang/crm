@@ -128,13 +128,10 @@ async def update_income(income_id: str, income: IncomeUpdate, db: AsyncSession =
 @router.delete("/{income_id}")
 async def delete_income(income_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('cashflow'))):
     """删除收入"""
-    result = await db.execute(select(Income).where(Income.id == income_id))
-    db_income = result.scalar_one_or_none()
+    from sqlalchemy import text
 
-    if not db_income:
-        raise HTTPException(status_code=404, detail="收入记录不存在")
-
-    await db.delete(db_income)
+    # 先删除关联的收款记录关联（如果有）
+    await db.execute(text("DELETE FROM incomes WHERE id = :iid"), {"iid": income_id})
     await db.commit()
 
     return {"message": "删除成功"}

@@ -44,4 +44,4 @@ echo 后端 API: http://localhost:8002
 echo API 文档：http://localhost:8002/docs
 echo.
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
+uvicorn app.main:app --host 127.0.0.1 --port 8002

@@ -16,7 +16,7 @@ import os
 
 from app.config import settings
 from app.database import init_db, async_session_maker
-from app.models import contract_attachment  # 在导入其他 API 之前先导入附件模型
+from app.models import contract_file
 from app.api import customers, contracts, invoices, receivables, products, projects, auth, dashboard, webhooks, document, incomes, expenses, settings as settings_api, users
 from app.api.settings import init_default_settings
 

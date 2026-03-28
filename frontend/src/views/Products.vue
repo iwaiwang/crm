@@ -33,7 +33,15 @@
     </el-card>
 
     <el-card class="table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <!-- 统计信息 -->
+      <div class="statistics-bar" v-if="selectedItems.length > 0">
+        <el-tag type="primary" size="large">已选择 {{ selectedItems.length }} 项</el-tag>
+        <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+        <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="产品名称" min-width="150" />
         <el-table-column prop="spec" label="规格型号" width="120" />
         <el-table-column prop="unit" label="单位" width="60" />
@@ -70,7 +78,12 @@
     </el-card>
 
     <!-- 新增/编辑产品对话框 -->
-    <el-dialog v-model="showDialog" :title="formData.id ? '编辑产品' : '新增产品'" width="500px">
+    <el-drawer
+      v-model="showDialog"
+      :title="formData.id ? '编辑产品' : '新增产品'"
+      size="520px"
+      direction="rtl"
+    >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="产品名称" prop="name">
           <el-input v-model="formData.name" />
@@ -98,7 +111,7 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 出入库对话框 -->
     <el-dialog v-model="showStockMoveDlg" :title="stockMoveForm.type === 'in' ? '入库登记' : '出库登记'" width="450px">
@@ -134,7 +147,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getProducts, createProduct, updateProduct, createStockMove, deleteProduct } from '@/api/product'
+import { getProducts, createProduct, updateProduct, createStockMove, deleteProduct, batchDeleteProducts } from '@/api/product'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -143,6 +156,7 @@ const showDialog = ref(false)
 const showStockMoveDlg = ref(false)
 const formRef = ref(null)
 const tableData = ref([])
+const selectedItems = ref([])
 
 const searchForm = reactive({ search: '', low_stock: null })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
@@ -191,6 +205,32 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleSelectionChange = (selection) => {
+  selectedItems.value = selection
+}
+
+const clearSelection = () => {
+  selectedItems.value = []
+  loadProducts()
+}
+
+const handleBatchDelete = async () => {
+  if (selectedItems.value.length === 0) {
+    ElMessage.warning('请选择要删除的产品')
+    return
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${selectedItems.value.length} 个产品吗？`, '提示', { type: 'warning' })
+  try {
+    const ids = selectedItems.value.map(item => item.id)
+    await batchDeleteProducts(ids)
+    ElMessage.success('批量删除成功')
+    selectedItems.value = []
+    loadProducts()
+  } catch (error) {
+    console.error('批量删除失败:', error)
+  }
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid) => {
@@ -226,4 +266,15 @@ onMounted(() => { loadProducts() })
 .search-card { margin-bottom: 20px; }
 .table-card { margin-bottom: 20px; }
 .pagination { display: flex; justify-content: flex-end; margin-top: 20px; }
+
+.statistics-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f0f9ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #bae6ff;
+}
 </style>

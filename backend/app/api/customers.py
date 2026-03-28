@@ -1,7 +1,7 @@
 """客户管理 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from typing import Optional
 
 from app.database import get_db
@@ -97,16 +97,83 @@ async def update_customer(customer_id: str, customer: CustomerUpdate, db: AsyncS
     return CustomerResponse.model_validate(db_customer)
 
 
+@router.post("/batch-delete")
+async def batch_delete_customers(ids: list[str], db: AsyncSession = Depends(get_db)):
+    """批量删除客户"""
+    from sqlalchemy import text
+
+    # 检查是否有关联的合同或项目
+    from app.models.contract import Contract
+    from app.models.project import Project
+
+    for customer_id in ids:
+        contract_result = await db.execute(select(Contract).where(Contract.customer_id == customer_id))
+        contracts = contract_result.scalars().all()
+        if contracts:
+            raise HTTPException(status_code=400, detail=f"客户 {customer_id} 下存在合同，无法批量删除")
+
+        project_result = await db.execute(select(Project).where(Project.customer_id == customer_id))
+        projects = project_result.scalars().all()
+        if projects:
+            raise HTTPException(status_code=400, detail=f"客户 {customer_id} 下存在项目，无法批量删除")
+
+    # 删除关联记录和 customers
+    for customer_id in ids:
+        await db.execute(text("DELETE FROM incomes WHERE customer_id = :cid"), {"cid": customer_id})
+        await db.execute(text("DELETE FROM expenses WHERE supplier_id = :sid"), {"sid": customer_id})
+        await db.execute(text("DELETE FROM contracts WHERE customer_id = :cid"), {"cid": customer_id})
+        await db.execute(text("DELETE FROM projects WHERE customer_id = :cid"), {"cid": customer_id})
+
+    await db.commit()
+    await db.close()
+
+    # 批量删除 customers
+    result = await db.execute(select(Customer).where(Customer.id.in_(ids)))
+    customers = result.scalars().all()
+    for customer in customers:
+        await db.delete(customer)
+
+    await db.commit()
+
+    return {"message": f"成功删除 {len(ids)} 个客户"}
+
+
 @router.delete("/{customer_id}")
 async def delete_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
     """删除客户"""
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+
+    # 检查是否有关联的合同
+    from app.models.contract import Contract
+    from app.models.project import Project
+
+    # 先检查合同和项目（这些不能删除）
+    contract_result = await db.execute(select(Contract).where(Contract.customer_id == customer_id))
+    contracts = contract_result.scalars().all()
+    if contracts:
+        raise HTTPException(status_code=400, detail=f"客户下存在 {len(contracts)} 个合同，无法删除")
+
+    project_result = await db.execute(select(Project).where(Project.customer_id == customer_id))
+    projects = project_result.scalars().all()
+    if projects:
+        raise HTTPException(status_code=400, detail=f"客户下存在 {len(projects)} 个项目，无法删除")
+
+    # 使用原始 SQL 删除关联的记录（避免 SQLAlchemy 级联问题）
+    await db.execute(text("DELETE FROM incomes WHERE customer_id = :cid"), {"cid": customer_id})
+    await db.execute(text("DELETE FROM expenses WHERE supplier_id = :sid"), {"sid": customer_id})
+    await db.execute(text("DELETE FROM contracts WHERE customer_id = :cid"), {"cid": customer_id})
+    await db.execute(text("DELETE FROM projects WHERE customer_id = :cid"), {"cid": customer_id})
+    await db.commit()
+
+    # 关闭并重新创建 session（清除所有缓存的对象）
+    await db.close()
+
+    # 重新获取客户并删除（使用新的 session）
     result = await db.execute(select(Customer).where(Customer.id == customer_id))
     db_customer = result.scalar_one_or_none()
-
-    if not db_customer:
-        raise HTTPException(status_code=404, detail="客户不存在")
-
-    await db.delete(db_customer)
-    await db.commit()
+    if db_customer:
+        await db.delete(db_customer)
+        await db.commit()
 
     return {"message": "删除成功"}

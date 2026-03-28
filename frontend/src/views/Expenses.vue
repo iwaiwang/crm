@@ -87,7 +87,12 @@
     </el-card>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog v-model="showDialog" :title="formData.id ? '编辑支出' : '新增支出'" width="600px">
+    <el-drawer
+      v-model="showDialog"
+      :title="formData.id ? '编辑支出' : '新增支出'"
+      size="620px"
+      direction="rtl"
+    >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="支出日期" prop="expense_date">
           <el-date-picker v-model="formData.expense_date" type="date" placeholder="选择日期" style="width: 100%" value-format="YYYY-MM-DD" />
@@ -139,7 +144,7 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 

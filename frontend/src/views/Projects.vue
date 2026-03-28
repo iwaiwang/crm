@@ -44,7 +44,15 @@
 
     <!-- 项目列表 -->
     <el-card class="table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <!-- 统计信息 -->
+      <div class="statistics-bar" v-if="selectedItems.length > 0">
+        <el-tag type="primary" size="large">已选择 {{ selectedItems.length }} 项</el-tag>
+        <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+        <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="项目名称" min-width="200" />
         <el-table-column prop="customer_name" label="客户" width="120" />
         <el-table-column prop="manager" label="负责人" width="100" />
@@ -76,7 +84,12 @@
     </el-card>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog v-model="showDialog" :title="formData.id ? '编辑项目' : '新增项目'" width="650px">
+    <el-drawer
+      v-model="showDialog"
+      :title="formData.id ? '编辑项目' : '新增项目'"
+      size="680px"
+      direction="rtl"
+    >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -163,7 +176,7 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 项目详情对话框 -->
     <el-dialog v-model="showDetailDlg" title="项目详情" width="800px">
@@ -239,7 +252,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getProjects, createProject, updateProject, getProjectFollowups, createFollowup, getProjectPhases, createPhase, getProjectTasks, createTask, deleteProject } from '@/api/project'
+import { getProjects, createProject, updateProject, getProjectFollowups, createFollowup, getProjectPhases, createPhase, getProjectTasks, createTask, deleteProject, batchDeleteProjects } from '@/api/project'
 import { getCustomers } from '@/api/customer'
 
 const loading = ref(false)
@@ -256,6 +269,7 @@ const currentProject = ref(null)
 const followups = ref([])
 const phases = ref([])
 const tasks = ref([])
+const selectedItems = ref([])
 
 const statusList = reactive([
   { value: 'contact', label: '接触洽谈', count: 0, color: '#909399' },
@@ -328,6 +342,32 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleSelectionChange = (selection) => {
+  selectedItems.value = selection
+}
+
+const clearSelection = () => {
+  selectedItems.value = []
+  loadProjects()
+}
+
+const handleBatchDelete = async () => {
+  if (selectedItems.value.length === 0) {
+    ElMessage.warning('请选择要删除的项目')
+    return
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${selectedItems.value.length} 个项目吗？`, '提示', { type: 'warning' })
+  try {
+    const ids = selectedItems.value.map(item => item.id)
+    await batchDeleteProjects(ids)
+    ElMessage.success('批量删除成功')
+    selectedItems.value = []
+    loadProjects()
+  } catch (error) {
+    console.error('批量删除失败:', error)
+  }
+}
+
 const handleView = async (row) => {
   currentProject.value = row
   showDetailDlg.value = true
@@ -374,4 +414,15 @@ onMounted(() => { loadProjects(); loadCustomers() })
 .table-card { margin-bottom: 20px; }
 .pagination { display: flex; justify-content: flex-end; margin-top: 20px; }
 .followup-timeline { margin-top: 15px; max-height: 400px; overflow-y: auto; }
+
+.statistics-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f0f9ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #bae6ff;
+}
 </style>

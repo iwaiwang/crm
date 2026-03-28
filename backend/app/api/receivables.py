@@ -247,6 +247,16 @@ async def add_payment(
 @router.delete("/{receivable_id}")
 async def delete_receivable(receivable_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('receivables'))):
     """删除应收款"""
+    from sqlalchemy import text
+
+    # 先删除关联的收款记录
+    await db.execute(text("DELETE FROM payment_records WHERE receivable_id = :rid"), {"rid": receivable_id})
+    await db.commit()
+
+    # 关闭 session 清除缓存对象
+    await db.close()
+
+    # 重新获取并删除应收款
     result = await db.execute(select(Receivable).where(Receivable.id == receivable_id))
     db_receivable = result.scalar_one_or_none()
 
@@ -266,6 +276,16 @@ async def delete_payment_record(
     current_user: User = Depends(require_menu_permission('receivables')),
 ):
     """删除收款记录（同步删除关联的收入记录）"""
+    from sqlalchemy import text
+
+    # 先用原始 SQL 删除关联的收入记录
+    await db.execute(text("DELETE FROM incomes WHERE payment_record_id = :prid"), {"prid": payment_record_id})
+    await db.commit()
+
+    # 关闭 session 清除缓存对象
+    await db.close()
+
+    # 重新获取收款记录
     result = await db.execute(
         select(PaymentRecord).where(PaymentRecord.id == payment_record_id)
     )
@@ -273,14 +293,6 @@ async def delete_payment_record(
 
     if not db_payment:
         raise HTTPException(status_code=404, detail="收款记录不存在")
-
-    # 查找关联的收入记录并删除
-    income_result = await db.execute(
-        select(Income).where(Income.payment_record_id == payment_record_id)
-    )
-    db_income = income_result.scalar_one_or_none()
-    if db_income:
-        await db.delete(db_income)
 
     # 更新应收款的已收金额和状态
     receivable_result = await db.execute(

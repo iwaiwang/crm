@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import date
 
@@ -9,7 +10,7 @@ from app.database import get_db
 from app.models.project import Project, ProjectFollowup, ProjectPhase, ProjectTask
 from app.models.customer import Customer
 from app.schemas.project import (
-    ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse,
+    ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectListItem,
     FollowupCreate, FollowupResponse, PhaseCreate, PhaseResponse, TaskCreate, TaskResponse
 )
 
@@ -47,46 +48,41 @@ async def get_projects(
 
     return ProjectListResponse(
         total=total,
-        items=[ProjectResponse.model_validate(p) for p in projects]
+        items=[ProjectListItem.model_validate(p) for p in projects]
     )
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     """获取项目详情"""
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id)
+        .options(selectinload(Project.followups))
+        .options(selectinload(Project.phases))
+        .options(selectinload(Project.tasks))
+    )
+    project = result.unique().scalar_one_or_none()
 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    # 预加载关联关系，避免 model_validate 时触发异步查询
-    await db.refresh(project, attribute_names=['followups', 'phases', 'tasks'])
     return ProjectResponse.model_validate(project)
 
 
 @router.post("", response_model=ProjectResponse)
 async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_db)):
     """创建项目"""
-    try:
-        result = await db.execute(select(Customer).where(Customer.id == project.customer_id))
-        if not result.scalar():
-            raise HTTPException(status_code=400, detail="客户不存在")
+    result = await db.execute(select(Customer).where(Customer.id == project.customer_id))
+    if not result.scalar():
+        raise HTTPException(status_code=400, detail="客户不存在")
 
-        db_project = Project(**project.model_dump())
-        db.add(db_project)
-        await db.commit()
-        # 预加载关联关系，避免 model_validate 时触发异步查询
-        await db.refresh(db_project, attribute_names=['followups', 'phases', 'tasks'])
+    db_project = Project(**project.model_dump())
+    db.add(db_project)
+    await db.commit()
+    await db.refresh(db_project)
 
-        return ProjectResponse.model_validate(db_project)
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        print(f"Error in create_project: {e}")
-        print(traceback.format_exc())
-        raise
+    return ProjectResponse.model_validate(db_project)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -103,14 +99,51 @@ async def update_project(project_id: str, project: ProjectUpdate, db: AsyncSessi
         setattr(db_project, field, value)
 
     await db.commit()
-    # 预加载关联关系，避免 model_validate 时触发异步查询
-    await db.refresh(db_project, attribute_names=['followups', 'phases', 'tasks'])
+    await db.refresh(db_project)
     return ProjectResponse.model_validate(db_project)
+
+
+@router.post("/batch-delete")
+async def batch_delete_projects(ids: list[str], db: AsyncSession = Depends(get_db)):
+    """批量删除项目"""
+    from sqlalchemy import text
+
+    for project_id in ids:
+        # 删除子表记录
+        await db.execute(text("DELETE FROM project_tasks WHERE project_id = :pid"), {"pid": project_id})
+        await db.execute(text("DELETE FROM project_phases WHERE project_id = :pid"), {"pid": project_id})
+        await db.execute(text("DELETE FROM project_followups WHERE project_id = :pid"), {"pid": project_id})
+
+    await db.commit()
+    await db.close()
+
+    # 批量删除项目
+    result = await db.execute(select(Project).where(Project.id.in_(ids)))
+    projects = result.scalars().all()
+
+    for project in projects:
+        await db.delete(project)
+
+    await db.commit()
+
+    return {"message": f"成功删除 {len(projects)} 个项目"}
 
 
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     """删除项目"""
+    from sqlalchemy import text
+
+    # 先删除子表记录
+    await db.execute(text("DELETE FROM project_tasks WHERE project_id = :pid"), {"pid": project_id})
+    await db.execute(text("DELETE FROM project_phases WHERE project_id = :pid"), {"pid": project_id})
+    await db.execute(text("DELETE FROM project_followups WHERE project_id = :pid"), {"pid": project_id})
+    await db.commit()
+
+    # 关闭 session 清除缓存对象
+    await db.close()
+
+    # 重新获取并删除项目
     result = await db.execute(select(Project).where(Project.id == project_id))
     db_project = result.scalar_one_or_none()
 

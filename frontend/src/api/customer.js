@@ -24,3 +24,8 @@ export function updateCustomer(id, data) {
 export function deleteCustomer(id) {
   return request.delete(`/customers/${id}`)
 }
+
+// 批量删除客户
+export function batchDeleteCustomers(ids) {
+  return request.post('/customers/batch-delete', ids)
+}

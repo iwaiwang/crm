@@ -54,8 +54,8 @@ class Income(Base):
 
     # 关联关系
     customer = relationship("Customer", back_populates="incomes")
-    invoice = relationship("Invoice", back_populates="income")
-    payment_record = relationship("PaymentRecord", backref="incomes")
+    invoice = relationship("Invoice", back_populates="income", passive_deletes=True)
+    payment_record = relationship("PaymentRecord", backref="incomes", passive_deletes=True)
 
     def __repr__(self):
         return f"<Income {self.id} - {self.amount}>"

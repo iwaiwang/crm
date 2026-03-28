@@ -136,9 +136,27 @@ class ProjectResponse(ProjectBase):
     created_at: datetime
     updated_at: datetime
     # 关联关系字段，默认不加载，需要单独查询
-    followups: Optional[List[FollowupResponse]] = Field(default_factory=list)
-    phases: Optional[List[PhaseResponse]] = Field(default_factory=list)
-    tasks: Optional[List[TaskResponse]] = Field(default_factory=list)
+    followups: Optional[List[FollowupResponse]] = Field(default=None)
+    phases: Optional[List[PhaseResponse]] = Field(default=None)
+    tasks: Optional[List[TaskResponse]] = Field(default=None)
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectListItem(BaseModel):
+    """项目列表项（不包含关联关系）"""
+    id: str
+    name: str = Field(..., description="项目名称", max_length=200)
+    customer_id: str = Field(..., description="关联客户")
+    contract_id: Optional[str] = Field(None, description="关联合同")
+    manager: Optional[str] = Field(None, description="负责人", max_length=100)
+    start_date: Optional[date] = Field(None, description="开始日期")
+    end_date: Optional[date] = Field(None, description="预计结束日期")
+    progress: int = Field(default=0, description="进度百分比 0-100", ge=0, le=100)
+    status: ProjectStatus = Field(default=ProjectStatus.CONTACT, description="项目状态")
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -146,4 +164,4 @@ class ProjectResponse(ProjectBase):
 
 class ProjectListResponse(BaseModel):
     total: int
-    items: List[ProjectResponse]
+    items: List[ProjectListItem]

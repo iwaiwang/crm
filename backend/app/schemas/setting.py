@@ -48,6 +48,7 @@ class SettingKeys:
 
     # 数据库配置
     DATABASE_DIRECTORY = "database_directory"
+    UPLOAD_DIRECTORY = "upload_directory"
 
     # 其他设置
     OCR_ENABLED = "ocr_enabled"

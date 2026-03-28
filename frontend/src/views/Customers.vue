@@ -41,7 +41,15 @@
 
     <!-- 客户列表 -->
     <el-card class="table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <!-- 统计信息 -->
+      <div class="statistics-bar" v-if="selectedItems.length > 0">
+        <el-tag type="primary" size="large">已选择 {{ selectedItems.length }} 项</el-tag>
+        <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+        <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="客户名称" min-width="150" />
         <el-table-column prop="contact" label="联系人" width="100" />
         <el-table-column prop="phone" label="电话" width="120" />
@@ -83,10 +91,11 @@
     </el-card>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog
+    <el-drawer
       v-model="showDialog"
       :title="formData.id ? '编辑客户' : '新增客户'"
-      width="500px"
+      size="520px"
+      direction="rtl"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="客户名称" prop="name">
@@ -126,20 +135,21 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '@/api/customer'
+import { getCustomers, createCustomer, updateCustomer, deleteCustomer, batchDeleteCustomers } from '@/api/customer'
 
 const loading = ref(false)
 const submitting = ref(false)
 const showDialog = ref(false)
 const formRef = ref(null)
 const tableData = ref([])
+const selectedItems = ref([])
 
 const searchForm = reactive({
   search: '',
@@ -233,6 +243,32 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleSelectionChange = (selection) => {
+  selectedItems.value = selection
+}
+
+const clearSelection = () => {
+  selectedItems.value = []
+  loadCustomers()
+}
+
+const handleBatchDelete = async () => {
+  if (selectedItems.value.length === 0) {
+    ElMessage.warning('请选择要删除的客户')
+    return
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${selectedItems.value.length} 个客户吗？`, '提示', { type: 'warning' })
+  try {
+    const ids = selectedItems.value.map(item => item.id)
+    await batchDeleteCustomers(ids)
+    ElMessage.success('批量删除成功')
+    selectedItems.value = []
+    loadCustomers()
+  } catch (error) {
+    console.error('批量删除失败:', error)
+  }
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
 
@@ -307,5 +343,16 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+.statistics-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f0f9ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #bae6ff;
 }
 </style>

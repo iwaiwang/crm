@@ -46,3 +46,13 @@ export function getContractFiles(id) {
 export function deleteContractFile(contractId, fileId) {
   return request.delete(`/contracts/${contractId}/files/${fileId}`)
 }
+
+// AI 预解析合同并生成应收计划
+export function previewAiContractImport(fileId) {
+  return request.post('/contracts/ai-import/preview', { file_id: fileId })
+}
+
+// 确认 AI 录入合同
+export function confirmAiContractImport(data) {
+  return request.post('/contracts/ai-import/confirm', data)
+}

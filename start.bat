@@ -48,7 +48,7 @@ if not exist ".env" (
 echo [信息] 安装 Python 依赖...
 pip install -r requirements.txt -q
 
-start "CRM Backend" cmd /k "uvicorn app.main:app --reload --host 0.0.0.0 --port 8002"
+start "CRM Backend" cmd /k "uvicorn app.main:app --host 127.0.0.1 --port 8002"
 
 echo [3/4] 启动前端服务...
 cd /d "%~dp0frontend"

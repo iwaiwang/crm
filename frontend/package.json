@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:settings:smoke": "python ..\\..\\.agents\\skills\\webapp-testing\\scripts\\with_server.py --server \"npm run dev\" --port 5173 -- python ..\\playwright_settings_smoke.py",
+    "test:settings:cleanup": "python ..\\..\\.agents\\skills\\webapp-testing\\scripts\\with_server.py --server \"..\\start_test_backend_8010.bat\" --port 8010 --server \"..\\start_test_frontend_8010.bat\" --port 5173 -- cmd /c \"set CRM_TEST_MODE=cleanup&& python ..\\playwright_settings_smoke.py\"",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",

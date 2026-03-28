@@ -94,6 +94,23 @@ async def update_product(product_id: str, product: ProductUpdate, db: AsyncSessi
     return ProductResponse.model_validate(db_product)
 
 
+@router.post("/batch-delete")
+async def batch_delete_products(ids: list[str], db: AsyncSession = Depends(get_db)):
+    """批量删除产品（软删除）"""
+    result = await db.execute(select(Product).where(Product.id.in_(ids)))
+    products = result.scalars().all()
+
+    if len(products) != len(ids):
+        raise HTTPException(status_code=404, detail="部分产品不存在")
+
+    for product in products:
+        product.is_active = False
+
+    await db.commit()
+
+    return {"message": f"成功删除 {len(products)} 个产品"}
+
+
 @router.delete("/{product_id}")
 async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
     """删除产品（软删除）"""

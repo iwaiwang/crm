@@ -39,3 +39,13 @@ export function getCompanyInfo() {
 export function initSettings() {
   return request.post('/settings/init')
 }
+
+// 获取实际的文件上传目录
+export function getUploadDirectory() {
+  return request.get('/settings/system/upload-dir')
+}
+
+// 清理未使用的上传文件
+export function cleanupUnusedFiles() {
+  return request.post('/settings/cleanup-files')
+}

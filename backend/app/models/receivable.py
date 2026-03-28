@@ -53,7 +53,7 @@ class Receivable(Base):
 
     # 关联关系
     contract = relationship("Contract", back_populates="receivables")
-    payment_records = relationship("PaymentRecord", back_populates="receivable", cascade="all, delete-orphan")
+    payment_records = relationship("PaymentRecord", back_populates="receivable", cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self):
         return f"<Receivable {self.id}>"

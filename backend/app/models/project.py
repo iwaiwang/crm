@@ -41,9 +41,9 @@ class Project(Base):
     # 关联关系
     customer = relationship("Customer", back_populates="projects")
     contract = relationship("Contract", back_populates="project")
-    followups = relationship("ProjectFollowup", back_populates="project", cascade="all, delete-orphan")
-    phases = relationship("ProjectPhase", back_populates="project", cascade="all, delete-orphan")
-    tasks = relationship("ProjectTask", back_populates="project", cascade="all, delete-orphan")
+    followups = relationship("ProjectFollowup", back_populates="project", cascade="all, delete-orphan", passive_deletes=True)
+    phases = relationship("ProjectPhase", back_populates="project", cascade="all, delete-orphan", passive_deletes=True)
+    tasks = relationship("ProjectTask", back_populates="project", cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self):
         return f"<Project {self.name}>"

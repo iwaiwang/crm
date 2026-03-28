@@ -2,9 +2,14 @@
   <div class="invoices-page">
     <div class="page-header">
       <h2>发票管理</h2>
-      <el-button type="primary" @click="openAddDialog">
+      <div class="header-actions">
+        <el-button @click="showAiImportDrawer = true">
+          <el-icon><MagicStick /></el-icon> AI录入发票
+        </el-button>
+        <el-button type="primary" @click="openAddDialog">
         <el-icon><Plus /></el-icon> 新增发票
-      </el-button>
+        </el-button>
+      </div>
     </div>
 
     <!-- 搜索筛选 -->
@@ -93,7 +98,12 @@
     </el-card>
 
     <!-- 对话框 -->
-    <el-dialog v-model="showDialog" :title="formData.id ? '编辑发票' : '新增发票'" width="700px">
+    <el-drawer
+      v-model="showDialog"
+      :title="formData.id ? '编辑发票' : '新增发票'"
+      size="720px"
+      direction="rtl"
+    >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="发票号码" prop="invoice_no">
           <el-input v-model="formData.invoice_no" placeholder="请输入发票号码" />
@@ -180,21 +190,25 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
+    <AiInvoiceImportDrawer v-model="showAiImportDrawer" @success="handleAiImportSuccess" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { MagicStick } from '@element-plus/icons-vue'
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, checkInvoiceDuplicate } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
 import { getCompanyInfo } from '@/api/setting'
+import AiInvoiceImportDrawer from '@/components/AiInvoiceImportDrawer.vue'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
 const showDialog = ref(false)
+const showAiImportDrawer = ref(false)
 const formRef = ref(null)
 const tableData = ref([])
 const contracts = ref([])
@@ -381,6 +395,11 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleAiImportSuccess = () => {
+  showAiImportDrawer.value = false
+  loadInvoices()
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid) => {
@@ -554,6 +573,7 @@ onMounted(async () => {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header-actions { display: flex; gap: 12px; }
 .search-card { margin-bottom: 20px; }
 .table-card { margin-bottom: 20px; }
 .pagination { display: flex; justify-content: flex-end; margin-top: 20px; }

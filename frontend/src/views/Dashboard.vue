@@ -198,6 +198,9 @@
             <span>快捷操作</span>
           </template>
           <el-space>
+            <el-button type="info" class="ai-entry-button" @click="aiImportVisible = true">
+              <el-icon><Plus /></el-icon> AI录入合同
+            </el-button>
             <el-button type="primary" @click="$router.push('/customers')">
               <el-icon><Plus /></el-icon> 新增客户
             </el-button>
@@ -214,6 +217,7 @@
         </el-card>
       </el-col>
     </el-row>
+    <AiContractImportDrawer v-model="aiImportVisible" />
   </div>
 </template>
 
@@ -222,6 +226,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { User, Document, Coin, Finished, TrendCharts, Money, Plus } from '@element-plus/icons-vue'
 import { getDashboardStats } from '@/api/dashboard'
+import AiContractImportDrawer from '@/components/AiContractImportDrawer.vue'
 
 const stats = ref({})
 const customerTrendRef = ref(null)
@@ -229,6 +234,7 @@ const contractStatusRef = ref(null)
 const cashflowTrendRef = ref(null)
 const expenseCategoryRef = ref(null)
 const selectedYear = ref(new Date().getFullYear().toString())
+const aiImportVisible = ref(false)
 
 const formatNumber = (num) => {
   if (!num) return '0'
@@ -531,5 +537,12 @@ onMounted(() => {
 
 .quick-actions {
   margin-top: 20px;
+}
+
+.ai-entry-button {
+  background: linear-gradient(135deg, #0f766e, #1d4ed8);
+  border: none;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(29, 78, 216, 0.22);
 }
 </style>
