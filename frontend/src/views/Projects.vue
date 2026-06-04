@@ -393,8 +393,8 @@ const handleSubmit = async () => {
 }
 
 const getStatusType = (status) => {
-  const map = { contact: '', bidding: 'info', signing: 'warning', implementation: 'danger', acceptance: 'success', after_sales: '' }
-  return map[status] || ''
+  const map = { contact: 'info', bidding: 'info', signing: 'warning', implementation: 'danger', acceptance: 'success', after_sales: 'primary' }
+  return map[status] || 'info'
 }
 const getStatusLabel = (status) => {
   const map = { contact: '接触洽谈', bidding: '投标', signing: '签约', implementation: '实施', acceptance: '验收', after_sales: '售后' }

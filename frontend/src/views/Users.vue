@@ -14,7 +14,7 @@
         <el-table-column prop="email" label="邮箱" width="200" />
         <el-table-column label="角色" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : ''">
+            <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">
               {{ row.role === 'admin' ? '管理员' : '普通用户' }}
             </el-tag>
           </template>
