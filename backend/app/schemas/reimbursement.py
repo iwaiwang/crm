@@ -70,6 +70,9 @@ class ReimbursementBase(BaseModel):
     invoice_id: Optional[str] = Field(None, description="关联进项发票ID")
     contract_id: Optional[str] = Field(None, description="关联合同ID")
     supplier_name: str = Field(..., description="供应商/收款方名称")
+    supplier_tax_id: Optional[str] = Field(None, description="收款方税号")
+    supplier_bank_name: Optional[str] = Field(None, description="开户行")
+    supplier_bank_account: Optional[str] = Field(None, description="银行账号")
     amount: Decimal = Field(..., ge=0, description="报销金额不含税")
     tax_amount: Optional[Decimal] = Field(Decimal("0"), description="税额")
     total_amount: Decimal = Field(..., ge=0, description="价税合计")
@@ -85,6 +88,9 @@ class ReimbursementCreate(ReimbursementBase):
 
 class ReimbursementUpdate(BaseModel):
     supplier_name: Optional[str] = None
+    supplier_tax_id: Optional[str] = None
+    supplier_bank_name: Optional[str] = None
+    supplier_bank_account: Optional[str] = None
     amount: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
     total_amount: Optional[Decimal] = None

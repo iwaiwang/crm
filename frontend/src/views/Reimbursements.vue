@@ -146,51 +146,105 @@
     <el-drawer
       v-model="showDialog"
       :title="formData.id ? '编辑报销单' : '新增报销单'"
-      size="620px"
+      size="720px"
       direction="rtl"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="120px">
+        <!-- 收款方信息 -->
+        <el-divider content-position="left">收款方信息</el-divider>
         <el-form-item label="供应商/收款方" prop="supplier_name">
           <el-input v-model="formData.supplier_name" placeholder="供应商/收款方名称" />
         </el-form-item>
-        <el-form-item label="报销金额(不含税)" prop="amount">
-          <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="税额" prop="tax_amount">
-          <el-input-number v-model="formData.tax_amount" :min="0" :precision="2" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="价税合计" prop="total_amount">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="税号">
+              <el-input v-model="formData.supplier_tax_id" placeholder="收款方税号" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="开户行">
+              <el-input v-model="formData.supplier_bank_name" placeholder="开户银行名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="银行账号">
+              <el-input v-model="formData.supplier_bank_account" placeholder="银行账号" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <!-- 金额信息 -->
+        <el-divider content-position="left">金额信息</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="报销金额(不含税)" prop="amount">
+              <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="税额">
+              <el-input-number v-model="formData.tax_amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="价税合计">
           <el-input-number v-model="formData.total_amount" :min="0" :precision="2" style="width: 100%" disabled />
         </el-form-item>
-        <el-form-item label="费用分类" prop="expense_category">
-          <el-select v-model="formData.expense_category" style="width: 100%">
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="房租" value="rent" />
-            <el-option label="水电" value="utilities" />
-            <el-option label="工资" value="salary" />
-            <el-option label="市场推广" value="marketing" />
-            <el-option label="软件服务" value="software" />
-            <el-option label="维修维护" value="maintenance" />
-            <el-option label="培训" value="training" />
-            <el-option label="业务招待" value="entertainment" />
-            <el-option label="物流快递" value="logistics" />
-            <el-option label="其他" value="other" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="关联发票">
-          <el-select v-model="formData.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
-            <el-option v-for="inv in purchaseInvoices" :key="inv.id" :label="inv.invoice_no" :value="inv.id" />
-          </el-select>
-        </el-form-item>
+
+        <!-- 分类和关联 -->
+        <el-divider content-position="left">分类与关联</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="费用分类" prop="expense_category">
+              <el-select v-model="formData.expense_category" style="width: 100%">
+                <el-option label="餐饮" value="catering" />
+                <el-option label="差旅" value="travel" />
+                <el-option label="采购" value="procurement" />
+                <el-option label="办公" value="office" />
+                <el-option label="房租" value="rent" />
+                <el-option label="水电" value="utilities" />
+                <el-option label="工资" value="salary" />
+                <el-option label="市场推广" value="marketing" />
+                <el-option label="软件服务" value="software" />
+                <el-option label="维修维护" value="maintenance" />
+                <el-option label="培训" value="training" />
+                <el-option label="业务招待" value="entertainment" />
+                <el-option label="物流快递" value="logistics" />
+                <el-option label="其他" value="other" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="关联发票">
+              <el-select v-model="formData.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
+                <el-option v-for="inv in purchaseInvoices" :key="inv.id" :label="inv.invoice_no" :value="inv.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="关联合同">
           <el-select v-model="formData.contract_id" placeholder="选择合同（可选）" clearable style="width: 100%">
             <el-option v-for="c in contracts" :key="c.id" :label="c.contract_no" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注" prop="remark">
+
+        <!-- 附件上传 -->
+        <el-divider content-position="left">附件</el-divider>
+        <el-form-item label="发票/票据文件">
+          <DocumentUploader
+            type="invoice"
+            :initial-value="fileInfo"
+            :refresh-key="documentUploaderKey"
+            :show-ai-parse="false"
+            accept-types=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+            @change="handleFileChange"
+          />
+        </el-form-item>
+
+        <!-- 备注 -->
+        <el-form-item label="备注">
           <el-input v-model="formData.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
@@ -255,6 +309,7 @@ import {
 } from '@/api/reimbursement'
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
+import DocumentUploader from '@/components/DocumentUploader.vue'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.user?.role === 'admin')
@@ -269,6 +324,8 @@ const rejectFormRef = ref(null)
 const tableData = ref([])
 const purchaseInvoices = ref([])
 const contracts = ref([])
+const fileInfo = ref(null)
+const documentUploaderKey = ref(0)
 const statistics = ref({
   total_pending_amount: 0,
   total_approved_amount: 0,
@@ -293,6 +350,9 @@ const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const formData = reactive({
   id: '',
   supplier_name: '',
+  supplier_tax_id: '',
+  supplier_bank_name: '',
+  supplier_bank_account: '',
   amount: 0,
   tax_amount: 0,
   total_amount: 0,
@@ -300,6 +360,8 @@ const formData = reactive({
   invoice_id: '',
   contract_id: '',
   remark: '',
+  file_id: '',
+  file_url: '',
 })
 
 const approveForm = reactive({
@@ -438,6 +500,9 @@ const openAddDialog = () => {
   Object.assign(formData, {
     id: '',
     supplier_name: '',
+    supplier_tax_id: '',
+    supplier_bank_name: '',
+    supplier_bank_account: '',
     amount: 0,
     tax_amount: 0,
     total_amount: 0,
@@ -445,7 +510,11 @@ const openAddDialog = () => {
     invoice_id: '',
     contract_id: '',
     remark: '',
+    file_id: '',
+    file_url: '',
   })
+  fileInfo.value = null
+  documentUploaderKey.value++
 }
 
 const handleEdit = (row) => {
@@ -453,6 +522,9 @@ const handleEdit = (row) => {
   Object.assign(formData, {
     id: row.id,
     supplier_name: row.supplier_name,
+    supplier_tax_id: row.supplier_tax_id || '',
+    supplier_bank_name: row.supplier_bank_name || '',
+    supplier_bank_account: row.supplier_bank_account || '',
     amount: Number(row.amount),
     tax_amount: Number(row.tax_amount || 0),
     total_amount: Number(row.total_amount),
@@ -460,7 +532,33 @@ const handleEdit = (row) => {
     invoice_id: row.invoice_id || '',
     contract_id: row.contract_id || '',
     remark: row.remark || '',
+    file_id: row.file_id || '',
+    file_url: row.file_url || '',
   })
+  // 设置文件信息
+  if (row.file_id && row.file_url) {
+    fileInfo.value = {
+      id: row.file_id,
+      name: row.supplier_name || '报销单',
+      url: row.file_url,
+      type: 'pdf',
+    }
+  } else {
+    fileInfo.value = null
+  }
+  documentUploaderKey.value++
+}
+
+// 处理文件变化
+const handleFileChange = (file) => {
+  fileInfo.value = file
+  if (file) {
+    formData.file_id = file.id
+    formData.file_url = file.url
+  } else {
+    formData.file_id = ''
+    formData.file_url = ''
+  }
 }
 
 const handleSave = async () => {
@@ -473,6 +571,12 @@ const handleSave = async () => {
           ...formData,
           total_amount: Number(formData.amount) + Number(formData.tax_amount),
         }
+        // 移除空字符串字段
+        Object.keys(data).forEach(key => {
+          if (data[key] === '') {
+            data[key] = null
+          }
+        })
         if (formData.id) {
           await updateReimbursement(formData.id, data)
           ElMessage.success('更新成功')
@@ -580,7 +684,13 @@ const handleDelete = async (row) => {
 }
 
 const handleView = (row) => {
-  ElMessage.info(`报销单详情：供应商 ${row.supplier_name}，金额 ¥${row.total_amount}`)
+  ElMessageBox.alert(`
+    供应商：${row.supplier_name}
+    税号：${row.supplier_tax_id || '未填写'}
+    开户行：${row.supplier_bank_name || '未填写'}
+    银行账号：${row.supplier_bank_account || '未填写'}
+    金额：¥${row.total_amount}
+  `, '报销单详情', { type: 'info' })
 }
 
 const showRejectReason = (row) => {

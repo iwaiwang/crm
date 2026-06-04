@@ -23,6 +23,9 @@ class Reimbursement(Base):
 
     # 基本信息
     supplier_name = Column(String(100), nullable=False, comment="供应商/收款方名称")
+    supplier_tax_id = Column(String(50), comment="收款方税号")
+    supplier_bank_name = Column(String(100), comment="开户行")
+    supplier_bank_account = Column(String(50), comment="银行账号")
     amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="报销金额不含税")
     tax_amount = Column(DECIMAL(15, 2), default=0, comment="税额")
     total_amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="价税合计")
