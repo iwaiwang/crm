@@ -2,9 +2,14 @@
   <div class="reimbursements-page">
     <div class="page-header">
       <h2>报销管理</h2>
-      <el-button type="primary" @click="openAddDialog">
-        <el-icon><Plus /></el-icon> 新增报销单
-      </el-button>
+      <div class="header-actions">
+        <el-button @click="showAiImportDrawer = true">
+          <el-icon><MagicStick /></el-icon> AI录入报销
+        </el-button>
+        <el-button type="primary" @click="openAddDialog">
+          <el-icon><Plus /></el-icon> 新增报销单
+        </el-button>
+      </div>
     </div>
 
     <!-- 统计卡片 -->
@@ -302,13 +307,14 @@
         <el-button type="danger" @click="handleReject">确认驳回</el-button>
       </template>
     </el-dialog>
+    <AiReimbursementImportDrawer v-model="showAiImportDrawer" @success="handleAiImportSuccess" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, MagicStick } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import {
   getReimbursements,
@@ -325,6 +331,7 @@ import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
 import { searchSuppliers } from '@/api/supplier'
 import DocumentUploader from '@/components/DocumentUploader.vue'
+import AiReimbursementImportDrawer from '@/components/AiReimbursementImportDrawer.vue'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.user?.role === 'admin')
@@ -332,6 +339,7 @@ const isAdmin = computed(() => userStore.user?.role === 'admin')
 const loading = ref(false)
 const submitting = ref(false)
 const showDialog = ref(false)
+const showAiImportDrawer = ref(false)
 const showApproveDialog = ref(false)
 const showRejectDialog = ref(false)
 const formRef = ref(null)
@@ -734,6 +742,12 @@ const showRejectReason = (row) => {
   ElMessageBox.alert(row.reject_reason || '无驳回原因', '驳回原因', { type: 'warning' })
 }
 
+const handleAiImportSuccess = () => {
+  showAiImportDrawer.value = false
+  loadReimbursements()
+  loadStatistics()
+}
+
 onMounted(() => {
   loadReimbursements()
   loadStatistics()
@@ -748,6 +762,11 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
 }
 
 .statistics-row {

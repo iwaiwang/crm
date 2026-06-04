@@ -141,3 +141,43 @@ class ReimbursementStatistics(BaseModel):
     approved_count: int = 0
     paid_count: int = 0
     by_category: Dict[str, Dict[str, Decimal]] = Field(default_factory=dict)
+
+
+# AI 录入报销单相关 Schema
+class AiReimbursementDraft(BaseModel):
+    """AI 解析后的报销单草稿"""
+    invoice_no: Optional[str] = None
+    invoice_code: Optional[str] = None
+    invoice_number: Optional[str] = None
+    supplier_name: Optional[str] = None
+    supplier_tax_id: Optional[str] = None
+    supplier_bank_name: Optional[str] = None
+    supplier_bank_account: Optional[str] = None
+    amount: Decimal = Decimal("0")
+    tax_amount: Decimal = Decimal("0")
+    total_amount: Decimal = Decimal("0")
+    expense_category: str = "other"
+    issue_date: Optional[date] = None
+    remark: Optional[str] = None
+    file_id: Optional[str] = None
+    file_url: Optional[str] = None
+    ai_parsed: bool = True
+    parse_confidence: Optional[float] = None
+
+
+class AiReimbursementPreviewRequest(BaseModel):
+    """AI 报销单预览请求"""
+    file_id: str = Field(..., description="上传文件ID")
+
+
+class AiReimbursementPreviewResponse(BaseModel):
+    """AI 报销单预览响应"""
+    reimbursement: AiReimbursementDraft
+    suggested_actions: List[str] = Field(default_factory=list)
+    raw_ai_result: Optional[Dict] = None
+
+
+class AiReimbursementConfirmRequest(BaseModel):
+    """AI 报销单确认请求"""
+    reimbursement: AiReimbursementDraft
+    create_supplier: bool = Field(False, description="是否同时创建收款方")

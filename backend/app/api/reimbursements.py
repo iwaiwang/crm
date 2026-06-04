@@ -1,4 +1,5 @@
 """报销管理 API"""
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
@@ -23,8 +24,15 @@ from app.schemas.reimbursement import (
     ReimbursementStatistics,
     REIMBURSEMENT_CATEGORY_LABELS,
     REIMBURSEMENT_STATUS_LABELS,
+    AiReimbursementDraft,
+    AiReimbursementPreviewRequest,
+    AiReimbursementPreviewResponse,
+    AiReimbursementConfirmRequest,
 )
 from app.api.auth import require_menu_permission, get_current_user
+from app.services import ai_service
+from app.models.supplier import Supplier
+from app.config import settings
 
 router = APIRouter()
 
@@ -452,3 +460,210 @@ async def pay_reimbursement(
     await db.refresh(db_reimbursement)
 
     return {"message": "已支付", "status": "paid"}
+
+
+# ===== AI 录入报销单相关 =====
+
+def _clean_text(value) -> Optional[str]:
+    """清理文本"""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _to_decimal(value, default="0") -> Decimal:
+    """转换为 Decimal"""
+    if value is None:
+        return Decimal(default)
+    try:
+        return Decimal(str(value))
+    except:
+        return Decimal(default)
+
+
+def _to_date(value) -> Optional[date]:
+    """转换为日期"""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except:
+            return None
+    return None
+
+
+def _recommend_expense_category(seller_name: Optional[str], remark: Optional[str]) -> str:
+    """根据供应商名称和备注推荐费用分类"""
+    text = f"{seller_name or ''} {remark or ''}".lower()
+
+    # 关键词匹配
+    if any(kw in text for kw in ["餐", "饭", "酒店", "住宿", "机票", "车票", "火车", "打车", "滴滴", "出行", "差旅", "旅行"]):
+        return "travel"
+    if any(kw in text for kw in ["采购", "进货", "原料", "材料", "设备", "物资"]):
+        return "procurement"
+    if any(kw in text for kw in ["办公", "文具", "纸张", "打印机", "电脑", "IT", "软件", "系统", "服务", "云", "服务器", "域名", "阿里云", "腾讯云"]):
+        return "software" if any(kw in text for kw in ["软件", "系统", "云", "服务器", "域名"]) else "office"
+    if any(kw in text for kw in ["房租", "租金", "物业", "租赁"]):
+        return "rent"
+    if any(kw in text for kw in ["水电", "电费", "水费", "燃气", "宽带", "网络"]):
+        return "utilities"
+    if any(kw in text for kw in ["工资", "薪资", "薪酬", "奖金", "提成"]):
+        return "salary"
+    if any(kw in text for kw in ["推广", "广告", "营销", "市场", "宣传", "投放", "百度", "抖音", "快手", "小红书"]):
+        return "marketing"
+    if any(kw in text for kw in ["维修", "维护", "修理", "保养", "配件"]):
+        return "maintenance"
+    if any(kw in text for kw in ["培训", "学习", "课程", "教育", "会议"]):
+        return "training"
+    if any(kw in text for kw in ["招待", "宴请", "礼品", "送礼"]):
+        return "entertainment"
+    if any(kw in text for kw in ["快递", "物流", "运输", "配送", "发货", "邮寄"]):
+        return "logistics"
+
+    return "other"
+
+
+def _resolve_upload_file(file_id: str) -> tuple:
+    """解析上传文件路径"""
+    upload_dir = settings.UPLOAD_DIR
+    invoices_dir = os.path.join(upload_dir, "invoices")
+    os.makedirs(invoices_dir, exist_ok=True)
+
+    # 查找文件
+    for ext in ["pdf", "jpg", "jpeg", "png", "doc", "docx"]:
+        potential_path = os.path.join(invoices_dir, f"{file_id}.{ext}")
+        if os.path.exists(potential_path):
+            file_url = f"/uploads/invoices/{file_id}.{ext}"
+            return potential_path, ext, file_url
+
+    # 也可能在根目录
+    for ext in ["pdf", "jpg", "jpeg", "png", "doc", "docx"]:
+        potential_path = os.path.join(upload_dir, f"{file_id}.{ext}")
+        if os.path.exists(potential_path):
+            file_url = f"/uploads/{file_id}.{ext}"
+            return potential_path, ext, file_url
+
+    raise HTTPException(status_code=404, detail=f"文件 {file_id} 不存在")
+
+
+@router.post("/ai-import/preview", response_model=AiReimbursementPreviewResponse)
+async def preview_ai_reimbursement_import(
+    payload: AiReimbursementPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission("reimbursements")),
+):
+    """AI 预览报销单录入"""
+    file_path, file_ext, file_url = _resolve_upload_file(payload.file_id)
+
+    try:
+        ai_result = await ai_service.parse_invoice(file_path, file_ext)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI 解析发票失败: {exc}") from exc
+
+    parsed_data = ai_result.get("data") or {}
+
+    # 从发票解析结果构建报销单草稿
+    # 报销单主要处理进项发票，所以供应商是销售方
+    invoice_no = _clean_text(parsed_data.get("invoice_no") or parsed_data.get("invoice_number"))
+    amount = _to_decimal(parsed_data.get("amount"))
+    total_amount = _to_decimal(parsed_data.get("total_amount") or parsed_data.get("amount"))
+    tax_amount = _to_decimal(parsed_data.get("tax_amount"), "0")
+
+    if total_amount <= 0 and amount > 0:
+        total_amount = amount + tax_amount
+
+    reimbursement_draft = AiReimbursementDraft(
+        invoice_no=invoice_no,
+        invoice_code=_clean_text(parsed_data.get("invoice_code")),
+        invoice_number=_clean_text(parsed_data.get("invoice_number")),
+        supplier_name=_clean_text(parsed_data.get("seller_name")),  # 销售方是供应商
+        supplier_tax_id=_clean_text(parsed_data.get("seller_tax_id")),
+        supplier_bank_name=None,  # AI 通常不解析银行信息
+        supplier_bank_account=None,
+        amount=amount,
+        tax_amount=tax_amount,
+        total_amount=total_amount,
+        expense_category=_recommend_expense_category(
+            _clean_text(parsed_data.get("seller_name")),
+            _clean_text(parsed_data.get("remarks"))
+        ),
+        issue_date=_to_date(parsed_data.get("invoice_date") or parsed_data.get("issue_date")),
+        remark=_clean_text(parsed_data.get("remarks")),
+        file_id=payload.file_id,
+        file_url=file_url,
+        ai_parsed=True,
+        parse_confidence=ai_result.get("confidence"),
+    )
+
+    suggested_actions = ["将创建 1 张报销单"]
+    if reimbursement_draft.supplier_name:
+        suggested_actions.append("可在确认后同时创建收款方")
+
+    return AiReimbursementPreviewResponse(
+        reimbursement=reimbursement_draft,
+        suggested_actions=suggested_actions,
+        raw_ai_result=ai_result,
+    )
+
+
+@router.post("/ai-import/confirm")
+async def confirm_ai_reimbursement_import(
+    payload: AiReimbursementConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission("reimbursements")),
+):
+    """AI 确认报销单录入"""
+    reimbursement_data = payload.reimbursement
+
+    if not _clean_text(reimbursement_data.supplier_name):
+        raise HTTPException(status_code=400, detail="供应商/收款方名称不能为空")
+
+    # 创建收款方（如果勾选）
+    if payload.create_supplier and reimbursement_data.supplier_name:
+        existing_result = await db.execute(
+            select(Supplier).where(Supplier.name == reimbursement_data.supplier_name)
+        )
+        if not existing_result.scalar_one_or_none():
+            new_supplier = Supplier(
+                name=reimbursement_data.supplier_name,
+                tax_id=reimbursement_data.supplier_tax_id,
+                bank_name=reimbursement_data.supplier_bank_name,
+                bank_account=reimbursement_data.supplier_bank_account,
+                remark=f"AI录入报销单自动创建",
+            )
+            db.add(new_supplier)
+
+    # 创建报销单
+    db_reimbursement = Reimbursement(
+        supplier_name=reimbursement_data.supplier_name,
+        supplier_tax_id=reimbursement_data.supplier_tax_id,
+        supplier_bank_name=reimbursement_data.supplier_bank_name,
+        supplier_bank_account=reimbursement_data.supplier_bank_account,
+        amount=reimbursement_data.amount,
+        tax_amount=reimbursement_data.tax_amount,
+        total_amount=reimbursement_data.total_amount,
+        expense_category=reimbursement_data.expense_category,
+        remark=reimbursement_data.remark,
+        file_id=reimbursement_data.file_id,
+        file_url=reimbursement_data.file_url,
+        source_type="invoice",
+        status="draft",
+        created_by=current_user.id,
+    )
+    db.add(db_reimbursement)
+
+    await db.commit()
+    await db.refresh(db_reimbursement)
+
+    return {
+        "message": "AI录入报销单成功",
+        "reimbursement_id": db_reimbursement.id,
+        "supplier_created": payload.create_supplier,
+    }

@@ -49,3 +49,13 @@ export function payReimbursement(id) {
 export function getReimbursementStatistics(params) {
   return request.get('/reimbursements/statistics', { params })
 }
+
+// AI 录入报销单预览
+export function previewAiReimbursementImport(fileId) {
+  return request.post('/reimbursements/ai-import/preview', { file_id: fileId })
+}
+
+// AI 录入报销单确认
+export function confirmAiReimbursementImport(data) {
+  return request.post('/reimbursements/ai-import/confirm', data)
+}
