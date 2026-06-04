@@ -58,7 +58,7 @@
         </el-table-column>
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.type === 'special' ? 'warning' : ''">
+            <el-tag :type="row.type === 'special' ? 'warning' : 'info'">
               {{ row.type === 'special' ? '专票' : '普票' }}
             </el-tag>
           </template>
