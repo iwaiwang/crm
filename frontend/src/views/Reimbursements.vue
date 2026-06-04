@@ -153,7 +153,21 @@
         <!-- 收款方信息 -->
         <el-divider content-position="left">收款方信息</el-divider>
         <el-form-item label="供应商/收款方" prop="supplier_name">
-          <el-input v-model="formData.supplier_name" placeholder="供应商/收款方名称" />
+          <el-autocomplete
+            v-model="formData.supplier_name"
+            :fetch-suggestions="fetchSupplierSuggestions"
+            placeholder="输入名称自动补全"
+            @select="handleSupplierSelect"
+            style="width: 100%"
+            clearable
+          >
+            <template #default="{ item }">
+              <div class="supplier-suggestion">
+                <span class="supplier-name">{{ item.name }}</span>
+                <span class="supplier-bank" v-if="item.bank_name">{{ item.bank_name }}</span>
+              </div>
+            </template>
+          </el-autocomplete>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
@@ -309,6 +323,7 @@ import {
 } from '@/api/reimbursement'
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
+import { searchSuppliers } from '@/api/supplier'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 
 const userStore = useUserStore()
@@ -427,6 +442,28 @@ const getStatusType = (status) => statusTypes[status] || 'info'
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+// 收款方自动补全
+const fetchSupplierSuggestions = async (queryString, cb) => {
+  if (!queryString) {
+    cb([])
+    return
+  }
+  try {
+    const results = await searchSuppliers(queryString, 10)
+    cb(results)
+  } catch (error) {
+    cb([])
+  }
+}
+
+// 选择收款方后自动填充信息
+const handleSupplierSelect = (item) => {
+  formData.supplier_name = item.name
+  formData.supplier_tax_id = item.tax_id || ''
+  formData.supplier_bank_name = item.bank_name || ''
+  formData.supplier_bank_account = item.bank_account || ''
 }
 
 // 监听金额变化自动计算合计
@@ -766,5 +803,20 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+.supplier-suggestion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.supplier-name {
+  font-weight: 500;
+}
+
+.supplier-bank {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

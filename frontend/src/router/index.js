@@ -63,6 +63,12 @@ const routes = [
         meta: { title: '报销管理' },
       },
       {
+        path: 'suppliers',
+        name: 'Suppliers',
+        component: () => import('@/views/Suppliers.vue'),
+        meta: { title: '收款方管理' },
+      },
+      {
         path: 'products',
         name: 'Products',
         component: () => import('@/views/Products.vue'),
@@ -152,6 +158,7 @@ router.beforeEach((to, from, next) => {
         'Invoices': 'invoices',
         'Receivables': 'receivables',
         'Reimbursements': 'reimbursements',
+        'Suppliers': 'suppliers',
         'Products': 'products',
         'Projects': 'projects',
         'Incomes': 'cashflow',

@@ -17,7 +17,7 @@ import os
 from app.config import settings
 from app.database import init_db, async_session_maker
 from app.models import contract_file
-from app.api import customers, contracts, invoices, receivables, products, projects, auth, dashboard, webhooks, document, incomes, expenses, settings as settings_api, users, reimbursements
+from app.api import customers, contracts, invoices, receivables, products, projects, auth, dashboard, webhooks, document, incomes, expenses, settings as settings_api, users, reimbursements, suppliers
 from app.api.settings import init_default_settings
 
 
@@ -90,6 +90,7 @@ app.include_router(projects.router, prefix="/api/projects", tags=["项目进度"
 app.include_router(incomes.router, prefix="/api/incomes", tags=["收入管理"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["支出管理"])
 app.include_router(reimbursements.router, prefix="/api/reimbursements", tags=["报销管理"])
+app.include_router(suppliers.router, prefix="/api/suppliers", tags=["收款方管理"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["系统设置"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["数据分析"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhook"])

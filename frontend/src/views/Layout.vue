@@ -36,6 +36,10 @@
           <el-icon><Wallet /></el-icon>
           <span>报销管理</span>
         </el-menu-item>
+        <el-menu-item index="/suppliers" v-if="hasPermission('suppliers')">
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>收款方管理</span>
+        </el-menu-item>
         <el-sub-menu index="cashflow" v-if="hasPermission('cashflow')">
           <template #title>
             <el-icon><Money /></el-icon>
@@ -100,7 +104,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
 import { ElMessageBox } from 'element-plus'
-import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet } from '@element-plus/icons-vue'
+import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet, OfficeBuilding } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
