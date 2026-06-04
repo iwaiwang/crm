@@ -151,44 +151,49 @@ async def get_reimbursement_statistics(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销统计"""
-    # 构建基础条件
-    base_condition = True
-    if current_user.role != "admin":
-        base_condition = (Reimbursement.created_by == current_user.id)
-    if year:
-        base_condition = base_condition & (extract('year', Reimbursement.created_at) == year)
+    # 构建基础查询
+    def get_base_query():
+        query = select(Reimbursement)
+        if current_user.role != "admin":
+            query = query.where(Reimbursement.created_by == current_user.id)
+        if year:
+            query = query.where(extract('year', Reimbursement.created_at) == year)
+        return query
 
     # 待审核金额
-    pending_result = await db.execute(
-        select(func.sum(Reimbursement.total_amount), func.count())
-        .where(Reimbursement.status == "pending")
-        .where(base_condition if current_user.role != "admin" else True)
-    )
+    pending_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "pending")
+    if current_user.role != "admin":
+        pending_query = pending_query.where(Reimbursement.created_by == current_user.id)
+    if year:
+        pending_query = pending_query.where(extract('year', Reimbursement.created_at) == year)
+    pending_result = await db.execute(pending_query)
     pending_amount, pending_count = pending_result.one() or (0, 0)
 
     # 待支付金额
-    approved_result = await db.execute(
-        select(func.sum(Reimbursement.total_amount), func.count())
-        .where(Reimbursement.status == "approved")
-        .where(base_condition if current_user.role != "admin" else True)
-    )
+    approved_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "approved")
+    if current_user.role != "admin":
+        approved_query = approved_query.where(Reimbursement.created_by == current_user.id)
+    if year:
+        approved_query = approved_query.where(extract('year', Reimbursement.created_at) == year)
+    approved_result = await db.execute(approved_query)
     approved_amount, approved_count = approved_result.one() or (0, 0)
 
     # 已支付金额
-    paid_result = await db.execute(
-        select(func.sum(Reimbursement.total_amount), func.count())
-        .where(Reimbursement.status == "paid")
-        .where(base_condition if current_user.role != "admin" else True)
-    )
+    paid_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "paid")
+    if current_user.role != "admin":
+        paid_query = paid_query.where(Reimbursement.created_by == current_user.id)
+    if year:
+        paid_query = paid_query.where(extract('year', Reimbursement.created_at) == year)
+    paid_result = await db.execute(paid_query)
     paid_amount, paid_count = paid_result.one() or (0, 0)
 
     # 按分类统计（已支付）
-    category_result = await db.execute(
-        select(Reimbursement.expense_category, func.sum(Reimbursement.total_amount))
-        .where(Reimbursement.status == "paid")
-        .where(base_condition if current_user.role != "admin" else True)
-        .group_by(Reimbursement.expense_category)
-    )
+    category_query = select(Reimbursement.expense_category, func.sum(Reimbursement.total_amount)).where(Reimbursement.status == "paid").group_by(Reimbursement.expense_category)
+    if current_user.role != "admin":
+        category_query = category_query.where(Reimbursement.created_by == current_user.id)
+    if year:
+        category_query = category_query.where(extract('year', Reimbursement.created_at) == year)
+    category_result = await db.execute(category_query)
     by_category = {}
     for cat, amt in category_result.all():
         label = _get_category_label(cat)
