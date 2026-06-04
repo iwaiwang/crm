@@ -47,6 +47,7 @@ class Contract(Base):
     project = relationship("Project", back_populates="contract", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     expenses = relationship("Expense", back_populates="contract", cascade="all, delete-orphan", passive_deletes=True)
     files = relationship("ContractFile", back_populates="contract", cascade="all, delete-orphan", passive_deletes=True)
+    reimbursements = relationship("Reimbursement", back_populates="contract")
 
     @property
     def primary_file(self):

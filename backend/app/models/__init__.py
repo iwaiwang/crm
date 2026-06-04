@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.income import Income
 from app.models.expense import Expense
 from app.models.setting import Setting
+from app.models.reimbursement import Reimbursement
 
 __all__ = [
     "Customer",
@@ -27,4 +28,5 @@ __all__ = [
     "Income",
     "Expense",
     "Setting",
+    "Reimbursement",
 ]
