@@ -14,6 +14,7 @@ from app.models.reimbursement import Reimbursement
 from app.models.invoice import Invoice
 from app.models.contract import Contract
 from app.models.user import User
+from app.models.ai_config import AIConfig
 from app.schemas.reimbursement import (
     ReimbursementCreate,
     ReimbursementUpdate,
@@ -464,6 +465,27 @@ async def pay_reimbursement(
 
 # ===== AI 录入报销单相关 =====
 
+async def _load_ai_config(db: AsyncSession) -> None:
+    """加载 AI 配置"""
+    result = await db.execute(select(AIConfig).limit(1))
+    db_config = result.scalar_one_or_none()
+    if not db_config or not db_config.enabled:
+        raise HTTPException(status_code=503, detail="AI 服务未配置或未启用")
+
+    ai_service.load_config_from_db(
+        {
+            "service_type": db_config.service_type,
+            "api_base_url": db_config.api_base_url,
+            "api_key": db_config.api_key,
+            "model": db_config.model,
+            "ollama_base_url": db_config.ollama_base_url,
+            "ollama_model": db_config.ollama_model,
+            "timeout": db_config.timeout,
+            "enabled": db_config.enabled,
+        }
+    )
+
+
 def _clean_text(value) -> Optional[str]:
     """清理文本"""
     if value is None:
@@ -558,6 +580,9 @@ async def preview_ai_reimbursement_import(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """AI 预览报销单录入"""
+    # 先加载 AI 配置
+    await _load_ai_config(db)
+
     file_path, file_ext, file_url = _resolve_upload_file(payload.file_id)
 
     try:
