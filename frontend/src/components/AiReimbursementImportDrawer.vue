@@ -97,12 +97,12 @@
             <!-- 金额信息 -->
             <el-divider content-position="left">金额信息</el-divider>
             <el-row :gutter="16">
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="发票号码">
                   <el-input v-model="form.invoice_no" placeholder="发票号码" />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="开票日期">
                   <el-date-picker
                     v-model="form.issue_date"
@@ -113,26 +113,28 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="12">
                 <el-form-item label="费用分类">
                   <el-select v-model="form.expense_category" style="width: 100%">
                     <el-option v-for="item in expenseCategories" :key="item.value" :label="item.label" :value="item.value" />
                   </el-select>
                 </el-form-item>
               </el-col>
-            </el-row>
-            <el-row :gutter="16">
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="不含税金额">
                   <el-input-number v-model="form.amount" :min="0" :precision="2" style="width: 100%" />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="12">
                 <el-form-item label="税额">
                   <el-input-number v-model="form.tax_amount" :min="0" :precision="2" style="width: 100%" />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="价税合计">
                   <el-input-number v-model="form.total_amount" :min="0" :precision="2" style="width: 100%" />
                 </el-form-item>
