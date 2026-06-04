@@ -56,3 +56,8 @@ export function previewAiContractImport(fileId) {
 export function confirmAiContractImport(data) {
   return request.post('/contracts/ai-import/confirm', data)
 }
+
+// 批量删除合同
+export function batchDeleteContracts(ids) {
+  return request.post('/contracts/batch-delete', { ids })
+}

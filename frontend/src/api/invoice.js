@@ -49,3 +49,8 @@ export function previewAiInvoiceImport(fileId) {
 export function confirmAiInvoiceImport(data) {
   return request.post('/invoices/ai-import/confirm', data)
 }
+
+// 批量删除发票
+export function batchDeleteInvoices(ids) {
+  return request.post('/invoices/batch-delete', { ids })
+}

@@ -815,6 +815,35 @@ async def update_invoice(invoice_id: str, invoice: InvoiceUpdate, db: AsyncSessi
     return InvoiceResponse.model_validate(db_invoice)
 
 
+@router.post("/batch-delete")
+async def batch_delete_invoices(
+    ids: List[str] = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('invoices')),
+):
+    """批量删除发票"""
+    from sqlalchemy import text
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的发票")
+
+    deleted_count = 0
+    for invoice_id in ids:
+        # 先删除相关的 income/expense 记录
+        await db.execute(text("DELETE FROM incomes WHERE invoice_id = :iid"), {"iid": invoice_id})
+        await db.execute(text("DELETE FROM expenses WHERE invoice_id = :iid"), {"iid": invoice_id})
+
+        # 删除发票
+        result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
+        db_invoice = result.scalar_one_or_none()
+        if db_invoice:
+            await db.delete(db_invoice)
+            deleted_count += 1
+
+    await db.commit()
+    return {"message": "批量删除成功", "deleted_count": deleted_count}
+
+
 @router.delete("/{invoice_id}")
 async def delete_invoice(invoice_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('invoices'))):
     """删除发票"""

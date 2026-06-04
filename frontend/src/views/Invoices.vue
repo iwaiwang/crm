@@ -45,6 +45,7 @@
         <el-tag type="primary" size="large">已选择 {{ selectedInvoices.length }} 张发票</el-tag>
         <span class="stat-item">合计金额：<span class="stat-value">¥{{ selectedTotalAmount.toLocaleString() }}</span></span>
         <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+        <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
       </div>
 
       <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
@@ -199,7 +200,7 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick } from '@element-plus/icons-vue'
-import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, checkInvoiceDuplicate } from '@/api/invoice'
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, checkInvoiceDuplicate, batchDeleteInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
 import { getCompanyInfo } from '@/api/setting'
 import AiInvoiceImportDrawer from '@/components/AiInvoiceImportDrawer.vue'
@@ -392,6 +393,23 @@ const handleDelete = async (row) => {
     loadInvoices()
   } catch (error) {
     console.error('删除失败:', error)
+  }
+}
+
+const handleBatchDelete = async () => {
+  if (selectedInvoices.value.length === 0) {
+    ElMessage.warning('请选择要删除的发票')
+    return
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${selectedInvoices.value.length} 张发票吗？`, '提示', { type: 'warning' })
+  try {
+    const ids = selectedInvoices.value.map(item => item.id)
+    await batchDeleteInvoices(ids)
+    ElMessage.success('批量删除成功')
+    selectedInvoices.value = []
+    loadInvoices()
+  } catch (error) {
+    console.error('批量删除失败:', error)
   }
 }
 

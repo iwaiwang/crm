@@ -572,6 +572,38 @@ async def update_contract(contract_id: str, contract: ContractUpdate, db: AsyncS
     return ContractResponse.model_validate(saved_contract)
 
 
+@router.post("/batch-delete")
+async def batch_delete_contracts(
+    ids: List[str] = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量删除合同"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的合同")
+
+    deleted_count = 0
+    for contract_id in ids:
+        # 删除相关记录
+        await db.execute(
+            text("DELETE FROM payment_records WHERE receivable_id IN (SELECT id FROM receivables WHERE contract_id = :cid)"),
+            {"cid": contract_id},
+        )
+        await db.execute(text("DELETE FROM receivables WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(
+            text("DELETE FROM incomes WHERE invoice_id IN (SELECT id FROM invoices WHERE contract_id = :cid)"),
+            {"cid": contract_id},
+        )
+        await db.execute(text("DELETE FROM expenses WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM invoices WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM projects WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM contract_files WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM contracts WHERE id = :cid"), {"cid": contract_id})
+        deleted_count += 1
+
+    await db.commit()
+    return {"message": "批量删除成功", "deleted_count": deleted_count}
+
+
 @router.delete("/{contract_id}")
 async def delete_contract(contract_id: str, db: AsyncSession = Depends(get_db)):
     await db.execute(
