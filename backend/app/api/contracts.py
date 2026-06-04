@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -574,7 +574,7 @@ async def update_contract(contract_id: str, contract: ContractUpdate, db: AsyncS
 
 @router.post("/batch-delete")
 async def batch_delete_contracts(
-    ids: List[str] = Query(...),
+    ids: List[str] = Body(..., embed=True),
     db: AsyncSession = Depends(get_db),
 ):
     """批量删除合同"""

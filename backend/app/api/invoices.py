@@ -2,7 +2,7 @@
 import os
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -817,7 +817,7 @@ async def update_invoice(invoice_id: str, invoice: InvoiceUpdate, db: AsyncSessi
 
 @router.post("/batch-delete")
 async def batch_delete_invoices(
-    ids: List[str] = Query(...),
+    ids: List[str] = Body(..., embed=True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_menu_permission('invoices')),
 ):
