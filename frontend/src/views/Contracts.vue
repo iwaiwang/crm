@@ -214,8 +214,8 @@ const handleBatchDelete = async () => {
 }
 
 const getStatusType = (status) => {
-  const map = { signed: '', in_progress: 'warning', completed: 'success', terminated: 'danger' }
-  return map[status] || ''
+  const map = { signed: 'primary', in_progress: 'warning', completed: 'success', terminated: 'danger' }
+  return map[status] || 'info'
 }
 
 const getStatusLabel = (status) => {

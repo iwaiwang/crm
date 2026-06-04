@@ -575,7 +575,7 @@ const handleAiResult = (result) => {
 
 const getStatusType = (status) => {
   const map = { normal: 'success', void: 'info' }
-  return map[status] || ''
+  return map[status] || 'info'
 }
 const getStatusLabel = (status) => {
   const map = { normal: '正常', void: '作废' }
