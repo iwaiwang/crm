@@ -32,6 +32,10 @@
           <el-icon><Coin /></el-icon>
           <span>应收款管理</span>
         </el-menu-item>
+        <el-menu-item index="/reimbursements" v-if="hasPermission('reimbursements')">
+          <el-icon><Receipt /></el-icon>
+          <span>报销管理</span>
+        </el-menu-item>
         <el-sub-menu index="cashflow" v-if="hasPermission('cashflow')">
           <template #title>
             <el-icon><Money /></el-icon>
@@ -96,7 +100,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
 import { ElMessageBox } from 'element-plus'
-import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting } from '@element-plus/icons-vue'
+import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Receipt } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
