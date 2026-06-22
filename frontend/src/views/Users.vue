@@ -79,8 +79,11 @@
             <el-checkbox value="contracts">合同管理</el-checkbox>
             <el-checkbox value="invoices">发票管理</el-checkbox>
             <el-checkbox value="receivables">应收款管理</el-checkbox>
+            <el-checkbox value="reimbursements">报销管理</el-checkbox>
+            <el-checkbox value="suppliers">收款方管理</el-checkbox>
             <el-checkbox value="products">产品库存</el-checkbox>
             <el-checkbox value="projects">项目进度</el-checkbox>
+            <el-checkbox value="cashflow">收支管理</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
       </el-form>
@@ -151,8 +154,11 @@ const menuMap = {
   contracts: '合同管理',
   invoices: '发票管理',
   receivables: '应收款管理',
+  reimbursements: '报销管理',
+  suppliers: '收款方管理',
   products: '产品库存',
   projects: '项目进度',
+  cashflow: '收支管理',
 }
 
 const getMenuLabel = (key) => menuMap[key] || key

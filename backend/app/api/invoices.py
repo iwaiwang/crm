@@ -37,7 +37,7 @@ from app.schemas.invoice import (
     InvoiceUpdate,
 )
 from app.schemas.receivable import PaymentRecordCreate, PaymentRecordResponse, ReceivableResponse, ReceivableListResponse
-from app.api.auth import require_menu_permission
+from app.api.auth import require_menu_permission, require_any_menu_permission
 from app.schemas.setting import SettingKeys
 from app.services.ai_parser import ai_service
 
@@ -368,7 +368,7 @@ async def get_invoices(
     contract_id: Optional[str] = None,
     invoice_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_menu_permission('invoices')),
+    current_user: User = Depends(require_any_menu_permission(['invoices', 'reimbursements'])),
 ):
     """获取发票列表"""
     from sqlalchemy import select, func

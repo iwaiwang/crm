@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from typing import Optional
 
 from app.database import get_db
-from app.models.supplier import Supplier
+from app.models.supplier import Supplier, SupplierType, SupplierStatus
 from app.models.user import User
 from app.schemas.supplier import (
     SupplierCreate,
@@ -13,7 +13,7 @@ from app.schemas.supplier import (
     SupplierResponse,
     SupplierListResponse,
 )
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_menu_permission
 
 router = APIRouter()
 
@@ -23,6 +23,8 @@ async def get_suppliers(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
+    supplier_type: Optional[str] = None,
+    status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -32,10 +34,21 @@ async def get_suppliers(
     if search:
         query = query.where(Supplier.name.contains(search))
 
+    if supplier_type:
+        query = query.where(Supplier.supplier_type == supplier_type)
+
+    if status:
+        query = query.where(Supplier.status == status)
+
     # 获取总数
     count_query = select(func.count()).select_from(Supplier)
     if search:
         count_query = count_query.where(Supplier.name.contains(search))
+    if supplier_type:
+        count_query = count_query.where(Supplier.supplier_type == supplier_type)
+    if status:
+        count_query = count_query.where(Supplier.status == status)
+
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
@@ -68,9 +81,15 @@ async def search_suppliers(
         {
             "id": s.id,
             "name": s.name,
+            "supplier_type": s.supplier_type,
             "tax_id": s.tax_id,
+            "id_card": s.id_card,
             "bank_name": s.bank_name,
+            "bank_province": s.bank_province,
+            "bank_branch": s.bank_branch,
             "bank_account": s.bank_account,
+            "bank_code": s.bank_code,
+            "account_type": s.account_type,
         }
         for s in suppliers
     ]
@@ -96,7 +115,7 @@ async def get_supplier(
 async def create_supplier(
     supplier: SupplierCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_menu_permission("suppliers")),
 ):
     """创建收款方"""
     # 检查名称是否重复
@@ -117,7 +136,7 @@ async def update_supplier(
     supplier_id: str,
     supplier: SupplierUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_menu_permission("suppliers")),
 ):
     """更新收款方"""
     result = await db.execute(select(Supplier).where(Supplier.id == supplier_id))
@@ -146,7 +165,7 @@ async def update_supplier(
 async def delete_supplier(
     supplier_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_menu_permission("suppliers")),
 ):
     """删除收款方"""
     result = await db.execute(select(Supplier).where(Supplier.id == supplier_id))

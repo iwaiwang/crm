@@ -197,7 +197,7 @@ async def get_reimbursement_statistics(
     by_category = {}
     for cat, amt in category_result.all():
         label = _get_category_label(cat)
-        by_category[label] = {"amount": float(amt or 0), "category_code": cat}
+        by_category[label] = {"amount": Decimal(str(amt or 0))}
 
     return ReimbursementStatistics(
         total_pending_amount=Decimal(str(pending_amount or 0)),
@@ -670,8 +670,36 @@ async def confirm_ai_reimbursement_import(
             )
             db.add(new_supplier)
 
-    # 创建报销单
+    # 创建进项发票记录
+    invoice_no = reimbursement_data.invoice_no
+    if not invoice_no and reimbursement_data.invoice_code and reimbursement_data.invoice_number:
+        invoice_no = f"{reimbursement_data.invoice_code}-{reimbursement_data.invoice_number}"
+
+    db_invoice = Invoice(
+        invoice_code=reimbursement_data.invoice_code,
+        invoice_number=reimbursement_data.invoice_number,
+        invoice_no=invoice_no,
+        invoice_date=reimbursement_data.issue_date,
+        issue_date=reimbursement_data.issue_date,
+        amount=reimbursement_data.amount,
+        tax_amount=reimbursement_data.tax_amount,
+        total_amount=reimbursement_data.total_amount,
+        invoice_type="purchase",  # 进项发票
+        seller_name=reimbursement_data.supplier_name,  # 销售方是供应商
+        seller_tax_id=reimbursement_data.supplier_tax_id,
+        status="normal",  # 已收到发票
+        file_id=reimbursement_data.file_id,
+        file_url=reimbursement_data.file_url,
+        ai_parsed=True,
+        parse_confidence=reimbursement_data.parse_confidence,
+        remark=reimbursement_data.remark,
+    )
+    db.add(db_invoice)
+    await db.flush()  # 获取发票ID
+
+    # 创建报销单，关联发票
     db_reimbursement = Reimbursement(
+        invoice_id=db_invoice.id,  # 关联发票
         supplier_name=reimbursement_data.supplier_name,
         supplier_tax_id=reimbursement_data.supplier_tax_id,
         supplier_bank_name=reimbursement_data.supplier_bank_name,
@@ -691,9 +719,11 @@ async def confirm_ai_reimbursement_import(
 
     await db.commit()
     await db.refresh(db_reimbursement)
+    await db.refresh(db_invoice)
 
     return {
         "message": "AI录入报销单成功",
         "reimbursement_id": db_reimbursement.id,
+        "invoice_id": db_invoice.id,
         "supplier_created": payload.create_supplier,
     }

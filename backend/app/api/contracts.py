@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_menu_permission, require_any_menu_permission
 from app.config import settings
 from app.database import get_db
 from app.models.ai_config import AIConfig
@@ -353,6 +353,7 @@ async def get_contracts(
     status: Optional[str] = None,
     customer_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_any_menu_permission(['contracts', 'reimbursements'])),
 ):
     query = select(Contract)
 

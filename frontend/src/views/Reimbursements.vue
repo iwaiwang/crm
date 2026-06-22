@@ -560,6 +560,9 @@ const openAddDialog = () => {
   })
   fileInfo.value = null
   documentUploaderKey.value++
+  // 在打开对话框时加载发票和合同列表
+  loadPurchaseInvoices()
+  loadContracts()
 }
 
 const handleEdit = (row) => {
@@ -592,6 +595,9 @@ const handleEdit = (row) => {
     fileInfo.value = null
   }
   documentUploaderKey.value++
+  // 在打开对话框时加载发票和合同列表
+  loadPurchaseInvoices()
+  loadContracts()
 }
 
 // 处理文件变化
@@ -751,8 +757,6 @@ const handleAiImportSuccess = () => {
 onMounted(() => {
   loadReimbursements()
   loadStatistics()
-  loadPurchaseInvoices()
-  loadContracts()
 })
 </script>
 
