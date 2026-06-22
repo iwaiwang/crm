@@ -170,6 +170,12 @@ router.beforeEach((to, from, next) => {
 
       const requiredMenu = menuMap[to.name]
 
+      // Dashboard 页面所有登录用户可访问（作为默认首页）
+      if (to.name === 'Dashboard') {
+        next()
+        return
+      }
+
       // Users 和 Settings 页面需要 admin 角色
       if (to.name === 'Users' || to.name === 'Settings') {
         ElMessage.error('没有权限访问该页面')
