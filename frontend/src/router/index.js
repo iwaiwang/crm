@@ -168,18 +168,26 @@ router.beforeEach((to, from, next) => {
         'Settings': 'settings',
       }
 
-      const requiredMenu = menuMap[to.name]
-
-      // Dashboard 页面所有登录用户可访问（作为默认首页）
-      if (to.name === 'Dashboard') {
-        next()
-        return
+      // 权限到路由路径的映射（用于动态跳转）
+      const permissionToPath = {
+        'dashboard': '/dashboard',
+        'customers': '/customers',
+        'contracts': '/contracts',
+        'invoices': '/invoices',
+        'receivables': '/receivables',
+        'reimbursements': '/reimbursements',
+        'suppliers': '/suppliers',
+        'products': '/products',
+        'projects': '/projects',
+        'cashflow': '/incomes',
       }
+
+      const requiredMenu = menuMap[to.name]
 
       // Users 和 Settings 页面需要 admin 角色
       if (to.name === 'Users' || to.name === 'Settings') {
         ElMessage.error('没有权限访问该页面')
-        next('/dashboard')
+        redirectToFirstAllowedPage(menuPermissions, permissionToPath, next)
         return
       }
 
@@ -192,7 +200,7 @@ router.beforeEach((to, from, next) => {
       // 其他页面检查权限
       if (requiredMenu && !menuPermissions.includes(requiredMenu)) {
         ElMessage.error('没有权限访问该页面')
-        next('/dashboard')
+        redirectToFirstAllowedPage(menuPermissions, permissionToPath, next)
         return
       }
     }
@@ -200,5 +208,19 @@ router.beforeEach((to, from, next) => {
 
   next()
 })
+
+// 动态跳转到用户第一个有权限的页面
+function redirectToFirstAllowedPage(menuPermissions, permissionToPath, next) {
+  // 查找第一个有权限且有对应路由的页面
+  for (const permission of menuPermissions) {
+    const path = permissionToPath[permission]
+    if (path) {
+      next(path)
+      return
+    }
+  }
+  // 如果没有任何业务页面权限，跳转到个人中心
+  next('/profile')
+}
 
 export default router
