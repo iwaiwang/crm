@@ -12,7 +12,7 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
       >
-        <el-menu-item index="/dashboard">
+        <el-menu-item index="/dashboard" v-if="hasPermission('dashboard')">
           <el-icon><DataLine /></el-icon>
           <span>仪表盘</span>
         </el-menu-item>

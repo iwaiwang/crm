@@ -132,7 +132,9 @@ const handleLogin = async () => {
         userStore.setToken(res.access_token)
         userStore.setUser(res.user)
         ElMessage.success('登录成功')
-        router.push('/')
+
+        // 根据用户权限跳转到对应页面
+        redirectToAllowedPage(res.user)
       } catch (error) {
         console.error('登录失败:', error)
         console.error('Error response:', error.response)
@@ -142,6 +144,43 @@ const handleLogin = async () => {
       }
     }
   })
+}
+
+// 根据用户权限跳转
+const redirectToAllowedPage = (user) => {
+  // 管理员跳转到仪表盘
+  if (user.role === 'admin') {
+    router.push('/dashboard')
+    return
+  }
+
+  const menuPermissions = user.menu_permissions || []
+
+  // 权限到路由路径的映射
+  const permissionToPath = {
+    'dashboard': '/dashboard',
+    'customers': '/customers',
+    'contracts': '/contracts',
+    'invoices': '/invoices',
+    'receivables': '/receivables',
+    'reimbursements': '/reimbursements',
+    'suppliers': '/suppliers',
+    'products': '/products',
+    'projects': '/projects',
+    'cashflow': '/incomes',
+  }
+
+  // 查找第一个有权限的页面
+  for (const permission of menuPermissions) {
+    const path = permissionToPath[permission]
+    if (path) {
+      router.push(path)
+      return
+    }
+  }
+
+  // 如果没有任何业务页面权限，跳转到个人中心
+  router.push('/profile')
 }
 
 const handleRegister = async () => {
