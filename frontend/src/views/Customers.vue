@@ -295,8 +295,8 @@ const handleSubmit = async () => {
 }
 
 const getCategoryType = (category) => {
-  const map = { potential: 'info', normal: '', vip: 'warning' }
-  return map[category] || ''
+  const map = { potential: 'info', normal: 'primary', vip: 'warning' }
+  return map[category] || 'info'
 }
 
 const getCategoryLabel = (category) => {
@@ -306,7 +306,7 @@ const getCategoryLabel = (category) => {
 
 const getStatusType = (status) => {
   const map = { active: 'success', suspended: 'warning', lost: 'danger' }
-  return map[status] || ''
+  return map[status] || 'info'
 }
 
 const getStatusLabel = (status) => {

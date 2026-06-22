@@ -49,6 +49,7 @@
         <el-tag type="primary" size="large">已选择 {{ selectedContracts.length }} 条合同</el-tag>
         <span class="stat-item">合同金额合计：<span class="stat-value">¥{{ selectedTotalAmount.toLocaleString() }}</span></span>
         <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+        <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
       </div>
 
       <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
@@ -105,7 +106,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getContracts, deleteContract } from '@/api/contract'
+import { getContracts, deleteContract, batchDeleteContracts } from '@/api/contract'
 
 const router = useRouter()
 
@@ -195,9 +196,26 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleBatchDelete = async () => {
+  if (selectedContracts.value.length === 0) {
+    ElMessage.warning('请选择要删除的合同')
+    return
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${selectedContracts.value.length} 条合同吗？`, '提示', { type: 'warning' })
+  try {
+    const ids = selectedContracts.value.map(item => item.id)
+    await batchDeleteContracts(ids)
+    ElMessage.success('批量删除成功')
+    selectedContracts.value = []
+    loadContracts()
+  } catch (error) {
+    console.error('批量删除失败:', error)
+  }
+}
+
 const getStatusType = (status) => {
-  const map = { signed: '', in_progress: 'warning', completed: 'success', terminated: 'danger' }
-  return map[status] || ''
+  const map = { signed: 'primary', in_progress: 'warning', completed: 'success', terminated: 'danger' }
+  return map[status] || 'info'
 }
 
 const getStatusLabel = (status) => {

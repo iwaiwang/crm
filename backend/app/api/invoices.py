@@ -2,7 +2,7 @@
 import os
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -37,7 +37,7 @@ from app.schemas.invoice import (
     InvoiceUpdate,
 )
 from app.schemas.receivable import PaymentRecordCreate, PaymentRecordResponse, ReceivableResponse, ReceivableListResponse
-from app.api.auth import require_menu_permission
+from app.api.auth import require_menu_permission, require_any_menu_permission
 from app.schemas.setting import SettingKeys
 from app.services.ai_parser import ai_service
 
@@ -368,7 +368,7 @@ async def get_invoices(
     contract_id: Optional[str] = None,
     invoice_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_menu_permission('invoices')),
+    current_user: User = Depends(require_any_menu_permission(['invoices', 'reimbursements'])),
 ):
     """获取发票列表"""
     from sqlalchemy import select, func
@@ -813,6 +813,35 @@ async def update_invoice(invoice_id: str, invoice: InvoiceUpdate, db: AsyncSessi
     await db.refresh(db_invoice)
 
     return InvoiceResponse.model_validate(db_invoice)
+
+
+@router.post("/batch-delete")
+async def batch_delete_invoices(
+    ids: List[str] = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('invoices')),
+):
+    """批量删除发票"""
+    from sqlalchemy import text
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的发票")
+
+    deleted_count = 0
+    for invoice_id in ids:
+        # 先删除相关的 income/expense 记录
+        await db.execute(text("DELETE FROM incomes WHERE invoice_id = :iid"), {"iid": invoice_id})
+        await db.execute(text("DELETE FROM expenses WHERE invoice_id = :iid"), {"iid": invoice_id})
+
+        # 删除发票
+        result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
+        db_invoice = result.scalar_one_or_none()
+        if db_invoice:
+            await db.delete(db_invoice)
+            deleted_count += 1
+
+    await db.commit()
+    return {"message": "批量删除成功", "deleted_count": deleted_count}
 
 
 @router.delete("/{invoice_id}")

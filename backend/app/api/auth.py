@@ -77,6 +77,37 @@ def require_menu_permission(required_permission: str):
     return permission_checker
 
 
+def require_any_menu_permission(required_permissions: list):
+    """创建需要任意一个菜单权限的依赖"""
+    async def permission_checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        # 管理员可以访问所有页面
+        if current_user.role == 'admin':
+            return current_user
+
+        # 检查用户的菜单权限
+        menu_permissions = []
+        if current_user.menu_permissions:
+            try:
+                menu_permissions = json.loads(current_user.menu_permissions)
+            except (json.JSONDecodeError, TypeError):
+                menu_permissions = []
+
+        # 检查是否有任意一个所需权限
+        for perm in required_permissions:
+            if perm in menu_permissions:
+                return current_user
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问该资源",
+        )
+
+    return permission_checker
+
+
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """用户注册"""

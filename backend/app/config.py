@@ -21,16 +21,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 小时
 
     # 文件上传配置
-    # 使用绝对路径，确保静态文件挂载正确
-    UPLOAD_DIR: str = r"D:\工作\007-project\claude-code-test\crm-system\backend\data\uploads"
+    # 使用相对路径，基于项目根目录
+    UPLOAD_DIR: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "uploads")
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
 
     # CORS 配置
     CORS_ORIGINS: list = [
         "http://localhost",
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
         "http://127.0.0.1:3000",
     ]
 

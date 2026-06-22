@@ -6,13 +6,13 @@ import re
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_menu_permission, require_any_menu_permission
 from app.config import settings
 from app.database import get_db
 from app.models.ai_config import AIConfig
@@ -353,6 +353,7 @@ async def get_contracts(
     status: Optional[str] = None,
     customer_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_any_menu_permission(['contracts', 'reimbursements'])),
 ):
     query = select(Contract)
 
@@ -570,6 +571,38 @@ async def update_contract(contract_id: str, contract: ContractUpdate, db: AsyncS
 
     saved_contract = await _load_contract_with_files(contract_id, db)
     return ContractResponse.model_validate(saved_contract)
+
+
+@router.post("/batch-delete")
+async def batch_delete_contracts(
+    ids: List[str] = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量删除合同"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的合同")
+
+    deleted_count = 0
+    for contract_id in ids:
+        # 删除相关记录
+        await db.execute(
+            text("DELETE FROM payment_records WHERE receivable_id IN (SELECT id FROM receivables WHERE contract_id = :cid)"),
+            {"cid": contract_id},
+        )
+        await db.execute(text("DELETE FROM receivables WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(
+            text("DELETE FROM incomes WHERE invoice_id IN (SELECT id FROM invoices WHERE contract_id = :cid)"),
+            {"cid": contract_id},
+        )
+        await db.execute(text("DELETE FROM expenses WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM invoices WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM projects WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM contract_files WHERE contract_id = :cid"), {"cid": contract_id})
+        await db.execute(text("DELETE FROM contracts WHERE id = :cid"), {"cid": contract_id})
+        deleted_count += 1
+
+    await db.commit()
+    return {"message": "批量删除成功", "deleted_count": deleted_count}
 
 
 @router.delete("/{contract_id}")

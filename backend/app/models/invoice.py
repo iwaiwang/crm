@@ -57,6 +57,7 @@ class Invoice(Base):
     contract = relationship("Contract", back_populates="invoices")
     income = relationship("Income", back_populates="invoice", uselist=False, passive_deletes=True)
     expense = relationship("Expense", back_populates="invoice", uselist=False, passive_deletes=True)
+    reimbursements = relationship("Reimbursement", back_populates="invoice")
     # 与收款记录的关联（本公司开具发票时关联应收计划的收款登记）
     payment_records = relationship("PaymentRecord", back_populates="invoice", secondary="invoice_payment_record")
 

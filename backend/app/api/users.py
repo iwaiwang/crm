@@ -98,9 +98,12 @@ async def create_user(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")
 
+    # 将空字符串转换为 None，避免唯一约束冲突
+    email_value = email if email and email.strip() else None
+
     db_user = User(
         username=username,
-        email=email,
+        email=email_value,
         password_hash=get_password_hash(password),
         role=role,
         is_active=is_active,
