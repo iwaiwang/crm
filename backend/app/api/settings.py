@@ -42,6 +42,8 @@ DEFAULT_SETTINGS = {
     SettingKeys.UPLOAD_DIRECTORY: {"value": _get_upload_directory(), "value_type": "string", "description": "文件上传目录", "is_public": False},
     SettingKeys.OCR_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 OCR 功能", "is_public": False},
     SettingKeys.AI_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 AI 功能", "is_public": False},
+    SettingKeys.REIMBURSEMENT_DEFAULT_APPROVER_ID: {"value": "", "value_type": "string", "description": "默认报销审核人", "is_public": False},
+    SettingKeys.REIMBURSEMENT_DEFAULT_PAYER_ID: {"value": "", "value_type": "string", "description": "默认报销支付确认人", "is_public": False},
 }
 
 

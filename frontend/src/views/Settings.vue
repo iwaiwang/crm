@@ -94,6 +94,53 @@
           </el-form>
         </el-tab-pane>
 
+        <!-- 报销设置 -->
+        <el-tab-pane label="报销设置" name="reimbursement">
+          <el-form :model="reimbursementForm" label-width="150px" size="large">
+            <el-form-item label="提交人">
+              <el-input model-value="自动记录为报销单创建人" disabled />
+              <div class="form-tip">用户新增或 AI 录入报销单时，系统会自动把当前登录用户记录为提交人。</div>
+            </el-form-item>
+            <el-form-item label="默认审核人">
+              <el-select
+                v-model="reimbursementForm.default_approver_id"
+                clearable
+                filterable
+                placeholder="请选择默认审核人"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in activeUsers"
+                  :key="user.id"
+                  :label="formatUserOption(user)"
+                  :value="user.id"
+                />
+              </el-select>
+              <div class="form-tip">管理员始终可以审核；这里选择的用户即使不是管理员，也可以查看报销单并审核通过或驳回。</div>
+            </el-form-item>
+            <el-form-item label="支付确认人">
+              <el-select
+                v-model="reimbursementForm.default_payer_id"
+                clearable
+                filterable
+                placeholder="请选择支付确认人"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in activeUsers"
+                  :key="user.id"
+                  :label="formatUserOption(user)"
+                  :value="user.id"
+                />
+              </el-select>
+              <div class="form-tip">管理员始终可以确认支付；这里选择的用户即使不是管理员，也可以查看报销单并确认支付。</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="saveReimbursementConfig" :loading="saving">保存设置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <!-- 功能开关 -->
         <el-tab-pane label="功能开关" name="features">
           <el-form :model="featureForm" label-width="150px" size="large">
@@ -190,11 +237,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Delete } from '@element-plus/icons-vue'
-import { getSettings, getCompanyInfo, updateSetting, initSettings, cleanupUnusedFiles } from '@/api/setting'
+import { createSetting, getSettings, getCompanyInfo, getUploadDirectory, updateSetting, initSettings, cleanupUnusedFiles } from '@/api/setting'
 import { getAIServiceStatus, saveAiConfig as apiSaveAiConfig } from '@/api/document'
+import { getUserList } from '@/api/user'
 
 const activeTab = ref('company')
 const saving = ref(false)
@@ -207,6 +255,7 @@ const aiLastHealthCheck = ref(null)
 const actualUploadDir = ref('')
 const showCleanupDialog = ref(false)
 const cleaning = ref(false)
+const users = ref([])
 
 const isAuthError = (error) => {
   const status = error?.response?.status
@@ -241,10 +290,23 @@ const featureForm = reactive({
   ocr_enabled: true,
 })
 
+// 报销设置表单
+const reimbursementForm = reactive({
+  default_approver_id: '',
+  default_payer_id: '',
+})
+
 // 高级设置表单
 const advancedForm = reactive({
   upload_directory: '',
 })
+
+const activeUsers = computed(() => users.value.filter(user => user.is_active))
+
+const formatUserOption = (user) => {
+  const roleLabel = user.role === 'admin' ? '管理员' : '普通用户'
+  return `${user.username}（${roleLabel}）`
+}
 
 // 加载设置
 const loadSettings = async () => {
@@ -279,6 +341,12 @@ const loadSettings = async () => {
       featureForm.ocr_enabled = ocrSetting.value === 'true'
     }
 
+    // 查找报销设置
+    const reimbursementApproverSetting = response.items?.find(item => item.key === 'reimbursement_default_approver_id')
+    const reimbursementPayerSetting = response.items?.find(item => item.key === 'reimbursement_default_payer_id')
+    reimbursementForm.default_approver_id = reimbursementApproverSetting?.value || ''
+    reimbursementForm.default_payer_id = reimbursementPayerSetting?.value || ''
+
     // 查找文件目录设置
     const uploadSetting = response.items?.find(item => item.key === 'upload_directory')
     if (uploadSetting) {
@@ -292,6 +360,17 @@ const loadSettings = async () => {
     console.error('加载设置失败:', error)
     if (!isAuthError(error)) {
       ElMessage.error('加载设置失败：' + (error.message || '未知错误'))
+    }
+  }
+}
+
+const loadUsers = async () => {
+  try {
+    users.value = await getUserList()
+  } catch (error) {
+    console.error('加载用户列表失败:', error)
+    if (!isAuthError(error)) {
+      ElMessage.error('加载用户列表失败')
     }
   }
 }
@@ -469,6 +548,43 @@ const saveFeatures = async () => {
   }
 }
 
+const upsertSetting = async (key, payload) => {
+  try {
+    await updateSetting(key, payload)
+  } catch (error) {
+    if (error?.response?.status !== 404) {
+      throw error
+    }
+    await createSetting({ key, ...payload })
+  }
+}
+
+// 保存报销设置
+const saveReimbursementConfig = async () => {
+  saving.value = true
+  try {
+    await upsertSetting('reimbursement_default_approver_id', {
+      value: reimbursementForm.default_approver_id || '',
+      description: '默认报销审核人',
+      is_public: false,
+      value_type: 'string',
+    })
+    await upsertSetting('reimbursement_default_payer_id', {
+      value: reimbursementForm.default_payer_id || '',
+      description: '默认报销支付确认人',
+      is_public: false,
+      value_type: 'string',
+    })
+    ElMessage.success('报销设置保存成功')
+    await loadSettings()
+  } catch (error) {
+    console.error('保存报销设置失败:', error)
+    ElMessage.error(error.response?.data?.detail || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
 // 保存高级配置
 const saveAdvancedConfig = async () => {
   saving.value = true
@@ -508,6 +624,7 @@ const saveEditSetting = async () => {
 
 onMounted(() => {
   loadSettings()
+  loadUsers()
   checkAiService()
 })
 </script>

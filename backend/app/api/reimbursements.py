@@ -15,6 +15,7 @@ from app.models.invoice import Invoice
 from app.models.contract import Contract
 from app.models.user import User
 from app.models.ai_config import AIConfig
+from app.models.setting import Setting
 from app.schemas.reimbursement import (
     ReimbursementCreate,
     ReimbursementUpdate,
@@ -34,8 +35,37 @@ from app.api.auth import require_menu_permission, get_current_user
 from app.services import ai_service
 from app.models.supplier import Supplier
 from app.config import settings
+from app.schemas.setting import SettingKeys
 
 router = APIRouter()
+
+
+async def _get_setting_value(db: AsyncSession, key: str) -> Optional[str]:
+    result = await db.execute(select(Setting.value).where(Setting.key == key))
+    value = result.scalar_one_or_none()
+    return value.strip() if isinstance(value, str) else value
+
+
+async def _can_approve_reimbursements(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    approver_id = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_DEFAULT_APPROVER_ID)
+    return bool(approver_id and approver_id == user.id)
+
+
+async def _can_pay_reimbursements(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    payer_id = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_DEFAULT_PAYER_ID)
+    return bool(payer_id and payer_id == user.id)
+
+
+async def _can_view_all_reimbursements(db: AsyncSession, user: User) -> bool:
+    return (
+        user.role == "admin"
+        or await _can_approve_reimbursements(db, user)
+        or await _can_pay_reimbursements(db, user)
+    )
 
 
 def _get_status_label(status: str) -> str:
@@ -46,7 +76,11 @@ def _get_category_label(category: str) -> str:
     return REIMBURSEMENT_CATEGORY_LABELS.get(category, category)
 
 
-async def _enrich_reimbursement_response(db: AsyncSession, reimbursement: Reimbursement) -> ReimbursementResponse:
+async def _enrich_reimbursement_response(
+    db: AsyncSession,
+    reimbursement: Reimbursement,
+    current_user: Optional[User] = None,
+) -> ReimbursementResponse:
     """为报销单响应添加用户名称"""
     response_data = ReimbursementResponse.model_validate(reimbursement).model_dump()
 
@@ -68,6 +102,12 @@ async def _enrich_reimbursement_response(db: AsyncSession, reimbursement: Reimbu
         payer = payer_result.scalar_one_or_none()
         response_data["payer_name"] = payer.username if payer else None
 
+    if current_user:
+        can_approve = await _can_approve_reimbursements(db, current_user)
+        can_pay = await _can_pay_reimbursements(db, current_user)
+        response_data["can_approve"] = bool(can_approve and reimbursement.status == "pending")
+        response_data["can_pay"] = bool(can_pay and reimbursement.status == "approved")
+
     return ReimbursementResponse(**response_data)
 
 
@@ -84,11 +124,13 @@ async def get_reimbursements(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销单列表"""
+    can_view_all = await _can_view_all_reimbursements(db, current_user)
+
     # 构建基础查询
     query = select(Reimbursement)
 
-    # 非管理员只能看自己创建的
-    if current_user.role != "admin":
+    # 普通用户只能看自己创建的；指定审核/支付人可看全部
+    if not can_view_all:
         query = query.where(Reimbursement.created_by == current_user.id)
 
     # 状态筛选
@@ -113,7 +155,7 @@ async def get_reimbursements(
 
     # 获取总数
     count_query = select(func.count()).select_from(Reimbursement)
-    if current_user.role != "admin":
+    if not can_view_all:
         count_query = count_query.where(Reimbursement.created_by == current_user.id)
     if status:
         count_query = count_query.where(Reimbursement.status == status)
@@ -139,7 +181,7 @@ async def get_reimbursements(
     # 响应
     items = []
     for r in reimbursements:
-        items.append(await _enrich_reimbursement_response(db, r))
+        items.append(await _enrich_reimbursement_response(db, r, current_user))
 
     return ReimbursementListResponse(total=total, items=items)
 
@@ -151,10 +193,12 @@ async def get_reimbursement_statistics(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销统计"""
+    can_view_all = await _can_view_all_reimbursements(db, current_user)
+
     # 构建基础查询
     def get_base_query():
         query = select(Reimbursement)
-        if current_user.role != "admin":
+        if not can_view_all:
             query = query.where(Reimbursement.created_by == current_user.id)
         if year:
             query = query.where(extract('year', Reimbursement.created_at) == year)
@@ -162,7 +206,7 @@ async def get_reimbursement_statistics(
 
     # 待审核金额
     pending_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "pending")
-    if current_user.role != "admin":
+    if not can_view_all:
         pending_query = pending_query.where(Reimbursement.created_by == current_user.id)
     if year:
         pending_query = pending_query.where(extract('year', Reimbursement.created_at) == year)
@@ -171,7 +215,7 @@ async def get_reimbursement_statistics(
 
     # 待支付金额
     approved_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "approved")
-    if current_user.role != "admin":
+    if not can_view_all:
         approved_query = approved_query.where(Reimbursement.created_by == current_user.id)
     if year:
         approved_query = approved_query.where(extract('year', Reimbursement.created_at) == year)
@@ -180,7 +224,7 @@ async def get_reimbursement_statistics(
 
     # 已支付金额
     paid_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "paid")
-    if current_user.role != "admin":
+    if not can_view_all:
         paid_query = paid_query.where(Reimbursement.created_by == current_user.id)
     if year:
         paid_query = paid_query.where(extract('year', Reimbursement.created_at) == year)
@@ -189,7 +233,7 @@ async def get_reimbursement_statistics(
 
     # 按分类统计（已支付）
     category_query = select(Reimbursement.expense_category, func.sum(Reimbursement.total_amount)).where(Reimbursement.status == "paid").group_by(Reimbursement.expense_category)
-    if current_user.role != "admin":
+    if not can_view_all:
         category_query = category_query.where(Reimbursement.created_by == current_user.id)
     if year:
         category_query = category_query.where(extract('year', Reimbursement.created_at) == year)
@@ -224,10 +268,10 @@ async def get_reimbursement(
         raise HTTPException(status_code=404, detail="报销单不存在")
 
     # 权限检查：非管理员只能看自己的
-    if current_user.role != "admin" and reimbursement.created_by != current_user.id:
+    if not await _can_view_all_reimbursements(db, current_user) and reimbursement.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权限查看此报销单")
 
-    return await _enrich_reimbursement_response(db, reimbursement)
+    return await _enrich_reimbursement_response(db, reimbursement, current_user)
 
 
 @router.post("", response_model=ReimbursementResponse)
@@ -263,7 +307,7 @@ async def create_reimbursement(
     await db.commit()
     await db.refresh(db_reimbursement)
 
-    return await _enrich_reimbursement_response(db, db_reimbursement)
+    return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
 
 @router.put("/{reimbursement_id}", response_model=ReimbursementResponse)
@@ -305,7 +349,7 @@ async def update_reimbursement(
     await db.commit()
     await db.refresh(db_reimbursement)
 
-    return await _enrich_reimbursement_response(db, db_reimbursement)
+    return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
 
 @router.delete("/{reimbursement_id}")
@@ -375,8 +419,8 @@ async def approve_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """审核通过报销单"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_approve_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认审核人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()
@@ -414,8 +458,8 @@ async def reject_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """驳回报销单"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_approve_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认审核人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()
@@ -445,8 +489,8 @@ async def pay_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """确认支付"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_pay_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认支付确认人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()

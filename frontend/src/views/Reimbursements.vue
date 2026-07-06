@@ -117,11 +117,11 @@
               <el-button link type="success" @click="handleSubmit(row)">提交</el-button>
               <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </template>
-            <template v-else-if="row.status === 'pending' && isAdmin">
+            <template v-else-if="row.status === 'pending' && row.can_approve">
               <el-button link type="success" @click="openApproveDialog(row)">审核通过</el-button>
               <el-button link type="danger" @click="openRejectDialog(row)">驳回</el-button>
             </template>
-            <template v-else-if="row.status === 'approved' && isAdmin">
+            <template v-else-if="row.status === 'approved' && row.can_pay">
               <el-button link type="success" @click="handlePay(row)">确认支付</el-button>
             </template>
             <template v-else-if="row.status === 'rejected'">
@@ -312,10 +312,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MagicStick } from '@element-plus/icons-vue'
-import { useUserStore } from '@/store/user'
 import {
   getReimbursements,
   createReimbursement,
@@ -332,9 +331,6 @@ import { getContracts } from '@/api/contract'
 import { searchSuppliers } from '@/api/supplier'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 import AiReimbursementImportDrawer from '@/components/AiReimbursementImportDrawer.vue'
-
-const userStore = useUserStore()
-const isAdmin = computed(() => userStore.user?.role === 'admin')
 
 const loading = ref(false)
 const submitting = ref(false)

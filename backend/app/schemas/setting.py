@@ -53,3 +53,7 @@ class SettingKeys:
     # 其他设置
     OCR_ENABLED = "ocr_enabled"
     AI_ENABLED = "ai_enabled"
+
+    # 报销设置
+    REIMBURSEMENT_DEFAULT_APPROVER_ID = "reimbursement_default_approver_id"
+    REIMBURSEMENT_DEFAULT_PAYER_ID = "reimbursement_default_payer_id"

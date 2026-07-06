@@ -121,6 +121,8 @@ class ReimbursementResponse(ReimbursementBase):
     paid_by: Optional[str] = None
     payer_name: Optional[str] = None
     paid_at: Optional[datetime] = None
+    can_approve: bool = False
+    can_pay: bool = False
     created_at: datetime
     updated_at: datetime
 
