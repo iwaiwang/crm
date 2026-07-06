@@ -67,7 +67,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useUserStore } from '@/store/user'
+import { normalizeUser, useUserStore } from '@/store/user'
 import { login, register } from '@/api/auth'
 
 const router = useRouter()
@@ -148,13 +148,15 @@ const handleLogin = async () => {
 
 // 根据用户权限跳转
 const redirectToAllowedPage = (user) => {
+  const normalizedUser = normalizeUser(user)
+
   // 管理员跳转到仪表盘
-  if (user.role === 'admin') {
+  if (normalizedUser?.role === 'admin') {
     router.push('/dashboard')
     return
   }
 
-  const menuPermissions = user.menu_permissions || []
+  const menuPermissions = normalizedUser?.menu_permissions || []
 
   // 权限到路由路径的映射
   const permissionToPath = {

@@ -101,7 +101,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import { useUserStore } from '@/store/user'
+import { normalizeUser, useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
 import { ElMessageBox } from 'element-plus'
 import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet, OfficeBuilding } from '@element-plus/icons-vue'
@@ -110,9 +110,10 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const hasPermission = (menu) => {
-  if (!userStore.user) return false
-  if (userStore.user.role === 'admin') return true
-  const menuPermissions = userStore.user.menu_permissions || []
+  const user = normalizeUser(userStore.user)
+  if (!user) return false
+  if (user.role === 'admin') return true
+  const menuPermissions = user.menu_permissions
   return menuPermissions.includes(menu)
 }
 

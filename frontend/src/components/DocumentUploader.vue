@@ -334,6 +334,8 @@ const handleRemove = () => {
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
+  if (!Number.isFinite(Number(bytes)) || Number(bytes) <= 0) return '未知大小'
+  bytes = Number(bytes)
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useUserStore } from '@/store/user'
+import { normalizeUser, useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 
 const routes = [
@@ -142,7 +142,7 @@ router.beforeEach((to, from, next) => {
   }
 
   // 检查菜单权限
-  const user = userStore.user
+  const user = normalizeUser(userStore.user)
   if (user) {
     // 管理员可以访问所有页面
     if (user.role !== 'admin') {
