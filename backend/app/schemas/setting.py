@@ -57,3 +57,5 @@ class SettingKeys:
     # 报销设置
     REIMBURSEMENT_DEFAULT_APPROVER_ID = "reimbursement_default_approver_id"
     REIMBURSEMENT_DEFAULT_PAYER_ID = "reimbursement_default_payer_id"
+    REIMBURSEMENT_PAYER_COMPANIES = "reimbursement_payer_companies"
+    REIMBURSEMENT_EXPENSE_CATEGORIES = "reimbursement_expense_categories"

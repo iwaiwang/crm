@@ -50,6 +50,24 @@ export function getReimbursementStatistics(params) {
   return request.get('/reimbursements/statistics', { params })
 }
 
+// 获取支付方公司列表
+export function getReimbursementPayerCompanies() {
+  return request.get('/reimbursements/payer-companies/list')
+}
+
+// 获取费用分类列表
+export function getReimbursementExpenseCategories() {
+  return request.get('/reimbursements/expense-categories/list')
+}
+
+// 迁移已有报销单的 expense_category（旧 value → 新 value）
+export function migrateReimbursementExpenseCategory(oldValue, newValue) {
+  return request.post('/reimbursements/expense-categories/migrate', {
+    old_value: oldValue,
+    new_value: newValue,
+  })
+}
+
 // AI 录入报销单预览
 export function previewAiReimbursementImport(fileId) {
   return request.post('/reimbursements/ai-import/preview', { file_id: fileId })

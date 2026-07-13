@@ -76,7 +76,8 @@ class ReimbursementBase(BaseModel):
     amount: Decimal = Field(..., ge=0, description="报销金额不含税")
     tax_amount: Optional[Decimal] = Field(Decimal("0"), description="税额")
     total_amount: Decimal = Field(..., ge=0, description="价税合计")
-    expense_category: Optional[ReimbursementCategory] = Field(ReimbursementCategory.OTHER, description="费用分类")
+    expense_category: Optional[str] = Field("other", description="费用分类")
+    payer_company: Optional[str] = Field(None, description="支付方公司名称")
     remark: Optional[str] = Field(None, description="备注说明")
     file_id: Optional[str] = Field(None, description="附件文件ID")
     file_url: Optional[str] = Field(None, description="附件文件URL")
@@ -94,7 +95,8 @@ class ReimbursementUpdate(BaseModel):
     amount: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
     total_amount: Optional[Decimal] = None
-    expense_category: Optional[ReimbursementCategory] = None
+    expense_category: Optional[str] = None
+    payer_company: Optional[str] = None
     remark: Optional[str] = None
     file_id: Optional[str] = None
     file_url: Optional[str] = None
@@ -106,7 +108,7 @@ class ReimbursementReject(BaseModel):
 
 class ReimbursementApprove(BaseModel):
     amount: Optional[Decimal] = Field(None, description="修改后的金额")
-    expense_category: Optional[ReimbursementCategory] = Field(None, description="修改后的分类")
+    expense_category: Optional[str] = Field(None, description="修改后的分类")
 
 
 class ReimbursementResponse(ReimbursementBase):
@@ -159,6 +161,7 @@ class AiReimbursementDraft(BaseModel):
     tax_amount: Decimal = Decimal("0")
     total_amount: Decimal = Decimal("0")
     expense_category: str = "other"
+    payer_company: Optional[str] = None
     issue_date: Optional[date] = None
     remark: Optional[str] = None
     file_id: Optional[str] = None

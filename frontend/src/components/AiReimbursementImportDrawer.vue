@@ -117,14 +117,23 @@
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item label="费用分类">
-                  <el-select v-model="form.expense_category" style="width: 100%">
+                  <el-select v-model="form.expense_category" style="width: 100%" filterable allow-create>
                     <el-option v-for="item in expenseCategories" :key="item.value" :label="item.label" :value="item.value" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="不含税金额">
-                  <el-input-number v-model="form.amount" :min="0" :precision="2" style="width: 100%" />
+                <el-form-item label="支付方">
+                  <el-select
+                    v-model="form.payer_company"
+                    placeholder="选择支付方公司"
+                    clearable
+                    filterable
+                    allow-create
+                    style="width: 100%"
+                  >
+                    <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
+                  </el-select>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -179,7 +188,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import DocumentUploader from '@/components/DocumentUploader.vue'
-import { previewAiReimbursementImport, confirmAiReimbursementImport } from '@/api/reimbursement'
+import { previewAiReimbursementImport, confirmAiReimbursementImport, getReimbursementPayerCompanies, getReimbursementExpenseCategories } from '@/api/reimbursement'
 
 const props = defineProps({
   modelValue: {
@@ -197,22 +206,7 @@ const previewReady = ref(false)
 const submitting = ref(false)
 const summaryActions = ref([])
 
-const expenseCategories = [
-  { label: '餐饮', value: 'catering' },
-  { label: '差旅', value: 'travel' },
-  { label: '采购', value: 'procurement' },
-  { label: '办公', value: 'office' },
-  { label: '房租', value: 'rent' },
-  { label: '水电', value: 'utilities' },
-  { label: '工资', value: 'salary' },
-  { label: '市场推广', value: 'marketing' },
-  { label: '软件服务', value: 'software' },
-  { label: '维修维护', value: 'maintenance' },
-  { label: '培训', value: 'training' },
-  { label: '业务招待', value: 'entertainment' },
-  { label: '物流快递', value: 'logistics' },
-  { label: '其他', value: 'other' },
-]
+const expenseCategories = ref([])
 
 const form = reactive({
   invoice_no: '',
@@ -226,6 +220,7 @@ const form = reactive({
   tax_amount: 0,
   total_amount: 0,
   expense_category: 'other',
+  payer_company: '',
   issue_date: '',
   remark: '',
   file_id: '',
@@ -235,6 +230,25 @@ const form = reactive({
 })
 
 const createSupplier = ref(false)
+const payerCompanies = ref([])
+
+const loadPayerCompanies = async () => {
+  try {
+    const res = await getReimbursementPayerCompanies()
+    payerCompanies.value = res.items || []
+  } catch (error) {
+    payerCompanies.value = []
+  }
+}
+
+const loadExpenseCategories = async () => {
+  try {
+    const res = await getReimbursementExpenseCategories()
+    expenseCategories.value = res.items || []
+  } catch (error) {
+    expenseCategories.value = []
+  }
+}
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 const toNumber = (value) => Number(value || 0)
@@ -276,6 +290,7 @@ const resetState = () => {
     tax_amount: 0,
     total_amount: 0,
     expense_category: 'other',
+    payer_company: '',
     issue_date: '',
     remark: '',
     file_id: '',
@@ -300,6 +315,7 @@ const mapPreviewToState = (preview) => {
     tax_amount: toNumber(reimbursementData.tax_amount),
     total_amount: toNumber(reimbursementData.total_amount),
     expense_category: reimbursementData.expense_category || 'other',
+    payer_company: reimbursementData.payer_company || '',
     issue_date: reimbursementData.issue_date || '',
     remark: reimbursementData.remark || '',
     file_id: reimbursementData.file_id || fileInfo.value?.id || '',
@@ -378,7 +394,10 @@ const handleClose = () => {
 watch(
   () => props.modelValue,
   (visible) => {
-    if (!visible) {
+    if (visible) {
+      loadPayerCompanies()
+      loadExpenseCategories()
+    } else {
       resetState()
     }
   }

@@ -57,20 +57,7 @@
         </el-form-item>
         <el-form-item label="费用分类">
           <el-select v-model="searchForm.expense_category" placeholder="全部分类" clearable @change="handleSearch">
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="房租" value="rent" />
-            <el-option label="水电" value="utilities" />
-            <el-option label="工资" value="salary" />
-            <el-option label="市场推广" value="marketing" />
-            <el-option label="软件服务" value="software" />
-            <el-option label="维修维护" value="maintenance" />
-            <el-option label="培训" value="training" />
-            <el-option label="业务招待" value="entertainment" />
-            <el-option label="物流快递" value="logistics" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="年份">
@@ -80,6 +67,18 @@
         </el-form-item>
         <el-form-item label="供应商">
           <el-input v-model="searchForm.search" placeholder="供应商名称" clearable @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="支付方">
+          <el-select
+            v-model="searchForm.payer_company"
+            placeholder="全部支付方"
+            clearable
+            filterable
+            @change="handleSearch"
+            style="width: 180px"
+          >
+            <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
@@ -92,6 +91,12 @@
     <el-card class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="supplier_name" label="供应商/收款方" width="150" />
+        <el-table-column prop="payer_company" label="支付方" width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.payer_company" type="info" effect="plain">{{ row.payer_company }}</el-tag>
+            <span v-else class="text-muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="total_amount" label="报销金额" width="120" align="right">
           <template #default="{ row }">¥{{ Number(row.total_amount).toLocaleString() }}</template>
         </el-table-column>
@@ -217,24 +222,28 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="费用分类" prop="expense_category">
-              <el-select v-model="formData.expense_category" style="width: 100%">
-                <el-option label="餐饮" value="catering" />
-                <el-option label="差旅" value="travel" />
-                <el-option label="采购" value="procurement" />
-                <el-option label="办公" value="office" />
-                <el-option label="房租" value="rent" />
-                <el-option label="水电" value="utilities" />
-                <el-option label="工资" value="salary" />
-                <el-option label="市场推广" value="marketing" />
-                <el-option label="软件服务" value="software" />
-                <el-option label="维修维护" value="maintenance" />
-                <el-option label="培训" value="training" />
-                <el-option label="业务招待" value="entertainment" />
-                <el-option label="物流快递" value="logistics" />
-                <el-option label="其他" value="other" />
+              <el-select v-model="formData.expense_category" style="width: 100%" filterable allow-create>
+                <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="支付方" prop="payer_company">
+              <el-select
+                v-model="formData.payer_company"
+                placeholder="选择支付方公司"
+                clearable
+                filterable
+                allow-create
+                style="width: 100%"
+              >
+                <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
+              </el-select>
+              <div class="form-tip" v-if="!payerCompanies.length">尚未配置支付方，请到 系统设置 → 报销设置 中维护。</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="关联发票">
               <el-select v-model="formData.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
@@ -242,12 +251,14 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="关联合同">
+              <el-select v-model="formData.contract_id" placeholder="选择合同（可选）" clearable style="width: 100%">
+                <el-option v-for="c in contracts" :key="c.id" :label="c.contract_no" :value="c.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
-        <el-form-item label="关联合同">
-          <el-select v-model="formData.contract_id" placeholder="选择合同（可选）" clearable style="width: 100%">
-            <el-option v-for="c in contracts" :key="c.id" :label="c.contract_no" :value="c.id" />
-          </el-select>
-        </el-form-item>
 
         <!-- 附件上传 -->
         <el-divider content-position="left">附件</el-divider>
@@ -281,11 +292,7 @@
         </el-form-item>
         <el-form-item label="修改分类">
           <el-select v-model="approveForm.expense_category" style="width: 100%" placeholder="不修改则保持原分类" clearable>
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -325,6 +332,8 @@ import {
   rejectReimbursement,
   payReimbursement,
   getReimbursementStatistics,
+  getReimbursementPayerCompanies,
+  getReimbursementExpenseCategories,
 } from '@/api/reimbursement'
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
@@ -343,6 +352,8 @@ const rejectFormRef = ref(null)
 const tableData = ref([])
 const purchaseInvoices = ref([])
 const contracts = ref([])
+const payerCompanies = ref([])
+const expenseCategories = ref([])
 const fileInfo = ref(null)
 const documentUploaderKey = ref(0)
 const statistics = ref({
@@ -360,6 +371,7 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i)
 const searchForm = reactive({
   status: '',
   expense_category: '',
+  payer_company: '',
   year: null,
   search: '',
 })
@@ -376,6 +388,7 @@ const formData = reactive({
   tax_amount: 0,
   total_amount: 0,
   expense_category: 'other',
+  payer_company: '',
   invoice_id: '',
   contract_id: '',
   remark: '',
@@ -439,7 +452,11 @@ const statusTypes = {
   paid: 'success',
 }
 
-const getCategoryLabel = (category) => categoryLabels[category] || category
+const getCategoryLabel = (category) => {
+  const found = expenseCategories.value.find(c => c.value === category)
+  if (found) return found.label
+  return categoryLabels[category] || category
+}
 const getStatusLabel = (status) => statusLabels[status] || status
 const getStatusType = (status) => statusTypes[status] || 'info'
 
@@ -483,6 +500,7 @@ const loadReimbursements = async () => {
       page_size: pagination.page_size,
       status: searchForm.status,
       expense_category: searchForm.expense_category,
+      payer_company: searchForm.payer_company,
       year: searchForm.year,
       search: searchForm.search,
     })
@@ -522,6 +540,26 @@ const loadContracts = async () => {
   }
 }
 
+const loadPayerCompanies = async () => {
+  try {
+    const res = await getReimbursementPayerCompanies()
+    payerCompanies.value = res.items || []
+  } catch (error) {
+    console.error('加载支付方列表失败:', error)
+    payerCompanies.value = []
+  }
+}
+
+const loadExpenseCategories = async () => {
+  try {
+    const res = await getReimbursementExpenseCategories()
+    expenseCategories.value = res.items || []
+  } catch (error) {
+    console.error('加载费用分类失败:', error)
+    expenseCategories.value = []
+  }
+}
+
 const handleSearch = () => {
   pagination.page = 1
   loadReimbursements()
@@ -531,6 +569,7 @@ const handleSearch = () => {
 const handleReset = () => {
   searchForm.status = ''
   searchForm.expense_category = ''
+  searchForm.payer_company = ''
   searchForm.year = null
   searchForm.search = ''
   handleSearch()
@@ -548,6 +587,7 @@ const openAddDialog = () => {
     tax_amount: 0,
     total_amount: 0,
     expense_category: 'other',
+    payer_company: '',
     invoice_id: '',
     contract_id: '',
     remark: '',
@@ -559,6 +599,8 @@ const openAddDialog = () => {
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
+  loadPayerCompanies()
+  loadExpenseCategories()
 }
 
 const handleEdit = (row) => {
@@ -573,6 +615,7 @@ const handleEdit = (row) => {
     tax_amount: Number(row.tax_amount || 0),
     total_amount: Number(row.total_amount),
     expense_category: row.expense_category,
+    payer_company: row.payer_company || '',
     invoice_id: row.invoice_id || '',
     contract_id: row.contract_id || '',
     remark: row.remark || '',
@@ -594,6 +637,8 @@ const handleEdit = (row) => {
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
+  loadPayerCompanies()
+  loadExpenseCategories()
 }
 
 // 处理文件变化
@@ -733,6 +778,7 @@ const handleDelete = async (row) => {
 const handleView = (row) => {
   ElMessageBox.alert(`
     供应商：${row.supplier_name}
+    支付方：${row.payer_company || '未填写'}
     税号：${row.supplier_tax_id || '未填写'}
     开户行：${row.supplier_bank_name || '未填写'}
     银行账号：${row.supplier_bank_account || '未填写'}
@@ -753,6 +799,8 @@ const handleAiImportSuccess = () => {
 onMounted(() => {
   loadReimbursements()
   loadStatistics()
+  loadPayerCompanies()
+  loadExpenseCategories()
 })
 </script>
 
@@ -837,5 +885,16 @@ onMounted(() => {
 .supplier-bank {
   font-size: 12px;
   color: #909399;
+}
+
+.text-muted {
+  color: #c0c4cc;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 </style>

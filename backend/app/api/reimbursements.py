@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
 from sqlalchemy.orm import selectinload
-from typing import Optional
+from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 import json
@@ -46,6 +46,62 @@ async def _get_setting_value(db: AsyncSession, key: str) -> Optional[str]:
     return value.strip() if isinstance(value, str) else value
 
 
+async def _get_payer_companies(db: AsyncSession) -> List[str]:
+    """读取支付方公司名称列表"""
+    raw = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_PAYER_COMPANIES)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()]
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return []
+
+
+DEFAULT_EXPENSE_CATEGORIES = [
+    {"value": "catering", "label": "餐饮"},
+    {"value": "travel", "label": "差旅"},
+    {"value": "procurement", "label": "采购"},
+    {"value": "office", "label": "办公"},
+    {"value": "rent", "label": "房租"},
+    {"value": "utilities", "label": "水电"},
+    {"value": "salary", "label": "工资"},
+    {"value": "marketing", "label": "市场推广"},
+    {"value": "software", "label": "软件服务"},
+    {"value": "maintenance", "label": "维修维护"},
+    {"value": "training", "label": "培训"},
+    {"value": "entertainment", "label": "业务招待"},
+    {"value": "logistics", "label": "物流快递"},
+    {"value": "other", "label": "其他"},
+]
+
+
+async def _get_expense_categories(db: AsyncSession) -> List[dict]:
+    """读取费用分类列表 [{value, label}]"""
+    raw = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_EXPENSE_CATEGORIES)
+    if not raw:
+        return list(DEFAULT_EXPENSE_CATEGORIES)
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list) and data:
+            normalized = []
+            for item in data:
+                if isinstance(item, dict) and item.get("value"):
+                    value = str(item["value"]).strip()
+                    label = str(item.get("label") or value).strip()
+                    if value:
+                        normalized.append({"value": value, "label": label or value})
+                elif isinstance(item, str) and item.strip():
+                    normalized.append({"value": item.strip(), "label": item.strip()})
+            if normalized:
+                return normalized
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return list(DEFAULT_EXPENSE_CATEGORIES)
+
+
 async def _can_approve_reimbursements(db: AsyncSession, user: User) -> bool:
     if user.role == "admin":
         return True
@@ -72,7 +128,11 @@ def _get_status_label(status: str) -> str:
     return REIMBURSEMENT_STATUS_LABELS.get(status, status)
 
 
-def _get_category_label(category: str) -> str:
+def _get_category_label(category: str, categories: Optional[List[dict]] = None) -> str:
+    if categories:
+        for item in categories:
+            if item.get("value") == category:
+                return item.get("label") or category
     return REIMBURSEMENT_CATEGORY_LABELS.get(category, category)
 
 
@@ -117,6 +177,7 @@ async def get_reimbursements(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
     expense_category: Optional[str] = None,
+    payer_company: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     search: Optional[str] = None,
@@ -141,6 +202,10 @@ async def get_reimbursements(
     if expense_category:
         query = query.where(Reimbursement.expense_category == expense_category)
 
+    # 支付方筛选
+    if payer_company:
+        query = query.where(Reimbursement.payer_company == payer_company)
+
     # 年份筛选
     if year:
         query = query.where(extract('year', Reimbursement.created_at) == year)
@@ -149,9 +214,12 @@ async def get_reimbursements(
     if month:
         query = query.where(extract('month', Reimbursement.created_at) == month)
 
-    # 搜索
+    # 搜索（供应商名称或支付方）
     if search:
-        query = query.where(Reimbursement.supplier_name.contains(search))
+        query = query.where(
+            Reimbursement.supplier_name.contains(search)
+            | Reimbursement.payer_company.contains(search)
+        )
 
     # 获取总数
     count_query = select(func.count()).select_from(Reimbursement)
@@ -161,12 +229,17 @@ async def get_reimbursements(
         count_query = count_query.where(Reimbursement.status == status)
     if expense_category:
         count_query = count_query.where(Reimbursement.expense_category == expense_category)
+    if payer_company:
+        count_query = count_query.where(Reimbursement.payer_company == payer_company)
     if year:
         count_query = count_query.where(extract('year', Reimbursement.created_at) == year)
     if month:
         count_query = count_query.where(extract('month', Reimbursement.created_at) == month)
     if search:
-        count_query = count_query.where(Reimbursement.supplier_name.contains(search))
+        count_query = count_query.where(
+            Reimbursement.supplier_name.contains(search)
+            | Reimbursement.payer_company.contains(search)
+        )
 
     total_result = await db.execute(count_query)
     total = total_result.scalar()
@@ -238,9 +311,10 @@ async def get_reimbursement_statistics(
     if year:
         category_query = category_query.where(extract('year', Reimbursement.created_at) == year)
     category_result = await db.execute(category_query)
+    categories = await _get_expense_categories(db)
     by_category = {}
     for cat, amt in category_result.all():
-        label = _get_category_label(cat)
+        label = _get_category_label(cat, categories)
         by_category[label] = {"amount": Decimal(str(amt or 0))}
 
     return ReimbursementStatistics(
@@ -252,6 +326,50 @@ async def get_reimbursement_statistics(
         paid_count=paid_count or 0,
         by_category=by_category,
     )
+
+
+@router.get("/payer-companies/list", response_model=dict)
+async def get_payer_companies(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取支付方公司名称列表（来源：系统设置 → 报销设置）"""
+    companies = await _get_payer_companies(db)
+    return {"items": companies}
+
+
+@router.get("/expense-categories/list", response_model=dict)
+async def get_expense_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取费用分类列表（来源：系统设置 → 报销设置）"""
+    categories = await _get_expense_categories(db)
+    return {"items": categories}
+
+
+@router.post("/expense-categories/migrate", response_model=dict)
+async def migrate_expense_category(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission("reimbursements")),
+):
+    """把已有报销单的 expense_category 从旧值改成新值（用于分类标识变更后修复历史数据）"""
+    old_value = (payload.get("old_value") or "").strip()
+    new_value = (payload.get("new_value") or "").strip()
+    if not old_value or not new_value:
+        raise HTTPException(status_code=400, detail="old_value 和 new_value 都不能为空")
+    if old_value == new_value:
+        return {"message": "新旧值相同，无需迁移", "updated": 0}
+
+    result = await db.execute(
+        select(Reimbursement).where(Reimbursement.expense_category == old_value)
+    )
+    reimbursements = result.scalars().all()
+    for r in reimbursements:
+        r.expense_category = new_value
+    await db.commit()
+    return {"message": "迁移成功", "updated": len(reimbursements)}
 
 
 @router.get("/{reimbursement_id}", response_model=ReimbursementResponse)
@@ -752,6 +870,7 @@ async def confirm_ai_reimbursement_import(
         tax_amount=reimbursement_data.tax_amount,
         total_amount=reimbursement_data.total_amount,
         expense_category=reimbursement_data.expense_category,
+        payer_company=reimbursement_data.payer_company,
         remark=reimbursement_data.remark,
         file_id=reimbursement_data.file_id,
         file_url=reimbursement_data.file_url,

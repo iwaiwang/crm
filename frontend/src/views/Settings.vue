@@ -135,6 +135,67 @@
               </el-select>
               <div class="form-tip">管理员始终可以确认支付；这里选择的用户即使不是管理员，也可以查看报销单并确认支付。</div>
             </el-form-item>
+            <el-form-item label="支付方公司">
+              <div class="payer-companies-box">
+                <div class="payer-companies-list">
+                  <el-tag
+                    v-for="(name, index) in reimbursementForm.payer_companies"
+                    :key="index"
+                    closable
+                    @close="removePayerCompany(index)"
+                    style="margin-right: 8px; margin-bottom: 8px"
+                  >
+                    {{ name }}
+                  </el-tag>
+                </div>
+                <div class="payer-companies-add">
+                  <el-input
+                    v-model="newPayerCompany"
+                    placeholder="输入公司名称后回车或点击添加"
+                    style="width: 320px"
+                    @keyup.enter="addPayerCompany"
+                  />
+                  <el-button type="primary" plain @click="addPayerCompany">添加</el-button>
+                </div>
+                <div class="form-tip">这里维护本系统支持的所有支付方公司（比如多家关联公司共用一个 CRM 时）。新增报销单或 AI 录入时可从中选择支付方，报销管理列表和搜索也会按支付方区分。</div>
+              </div>
+            </el-form-item>
+            <el-form-item label="费用分类">
+              <div class="expense-categories-box">
+                <el-table :data="reimbursementForm.expense_categories" border size="small" style="width: 100%; margin-bottom: 10px">
+                  <el-table-column label="分类名称" min-width="160">
+                    <template #default="{ row, $index }">
+                      <el-input v-model="row.label" placeholder="分类显示名称" size="small" @change="markExpenseCategoryDirty($index)" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="标识 (value)" width="200">
+                    <template #default="{ row, $index }">
+                      <el-input
+                        v-model="row.value"
+                        placeholder="分类标识，保存后不可重复"
+                        size="small"
+                        @change="onExpenseCategoryValueChange($index)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="100" align="center">
+                    <template #default="{ $index }">
+                      <el-button link type="danger" size="small" @click="removeExpenseCategory($index)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div class="expense-categories-add">
+                  <el-input
+                    v-model="newExpenseCategory"
+                    placeholder="输入新分类名称后回车或点击添加"
+                    style="width: 320px"
+                    @keyup.enter="addExpenseCategory"
+                  />
+                  <el-button type="primary" plain @click="addExpenseCategory">添加</el-button>
+                </div>
+                <div class="form-tip">维护报销单可选的费用分类。修改「名称」只会改显示；修改「value」时，保存会自动把所有已使用旧 value 的历史报销单迁移到新 value，避免老数据找不到分类。</div>
+              </div>
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="saveReimbursementConfig" :loading="saving">保存设置</el-button>
             </el-form-item>
@@ -241,6 +302,7 @@ import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Delete } from '@element-plus/icons-vue'
 import { createSetting, getSettings, getCompanyInfo, getUploadDirectory, updateSetting, initSettings, cleanupUnusedFiles } from '@/api/setting'
+import { migrateReimbursementExpenseCategory } from '@/api/reimbursement'
 import { getAIServiceStatus, saveAiConfig as apiSaveAiConfig } from '@/api/document'
 import { getUserList } from '@/api/user'
 
@@ -294,7 +356,55 @@ const featureForm = reactive({
 const reimbursementForm = reactive({
   default_approver_id: '',
   default_payer_id: '',
+  payer_companies: [],
+  expense_categories: [],
 })
+
+const newPayerCompany = ref('')
+const newExpenseCategory = ref('')
+
+const addPayerCompany = () => {
+  const name = (newPayerCompany.value || '').trim()
+  if (!name) return
+  if (reimbursementForm.payer_companies.some(item => item === name)) {
+    ElMessage.warning('该公司已存在')
+    return
+  }
+  reimbursementForm.payer_companies.push(name)
+  newPayerCompany.value = ''
+}
+
+const removePayerCompany = (index) => {
+  reimbursementForm.payer_companies.splice(index, 1)
+}
+
+const addExpenseCategory = () => {
+  const label = (newExpenseCategory.value || '').trim()
+  if (!label) return
+  if (reimbursementForm.expense_categories.some(item => item.label === label || item.value === label)) {
+    ElMessage.warning('该分类已存在')
+    return
+  }
+  reimbursementForm.expense_categories.push({ value: label, label, _original_value: label })
+  newExpenseCategory.value = ''
+}
+
+const removeExpenseCategory = (index) => {
+  reimbursementForm.expense_categories.splice(index, 1)
+}
+
+const onExpenseCategoryValueChange = (index) => {
+  // 仅记录，保存时统一处理迁移
+}
+
+// 把加载到的分类每项加 _original_value，用于检测 value 是否被改过
+const tagOriginalValues = () => {
+  reimbursementForm.expense_categories.forEach(item => {
+    if (!Object.prototype.hasOwnProperty.call(item, '_original_value')) {
+      item._original_value = item.value
+    }
+  })
+}
 
 // 高级设置表单
 const advancedForm = reactive({
@@ -346,6 +456,47 @@ const loadSettings = async () => {
     const reimbursementPayerSetting = response.items?.find(item => item.key === 'reimbursement_default_payer_id')
     reimbursementForm.default_approver_id = reimbursementApproverSetting?.value || ''
     reimbursementForm.default_payer_id = reimbursementPayerSetting?.value || ''
+    const payerCompaniesSetting = response.items?.find(item => item.key === 'reimbursement_payer_companies')
+    let payerCompanies = []
+    if (payerCompaniesSetting?.value) {
+      try {
+        const parsed = JSON.parse(payerCompaniesSetting.value)
+        if (Array.isArray(parsed)) {
+          payerCompanies = parsed.map(v => String(v).trim()).filter(Boolean)
+        }
+      } catch (e) {
+        payerCompanies = []
+      }
+    }
+    reimbursementForm.payer_companies = payerCompanies
+
+    const expenseCategoriesSetting = response.items?.find(item => item.key === 'reimbursement_expense_categories')
+    let expenseCategories = []
+    if (expenseCategoriesSetting?.value) {
+      try {
+        const parsed = JSON.parse(expenseCategoriesSetting.value)
+        if (Array.isArray(parsed)) {
+          expenseCategories = parsed
+            .map(item => {
+              if (typeof item === 'string') {
+                const v = item.trim()
+                return v ? { value: v, label: v } : null
+              }
+              if (item && typeof item === 'object') {
+                const value = String(item.value || '').trim()
+                const label = String(item.label || value || '').trim()
+                if (value) return { value, label: label || value }
+              }
+              return null
+            })
+            .filter(Boolean)
+        }
+      } catch (e) {
+        expenseCategories = []
+      }
+    }
+    reimbursementForm.expense_categories = expenseCategories
+    tagOriginalValues()
 
     // 查找文件目录设置
     const uploadSetting = response.items?.find(item => item.key === 'upload_directory')
@@ -575,7 +726,55 @@ const saveReimbursementConfig = async () => {
       is_public: false,
       value_type: 'string',
     })
-    ElMessage.success('报销设置保存成功')
+    await upsertSetting('reimbursement_payer_companies', {
+      value: JSON.stringify(reimbursementForm.payer_companies || []),
+      description: '报销支付方公司名称列表',
+      is_public: true,
+      value_type: 'json',
+    })
+    await upsertSetting('reimbursement_expense_categories', {
+      value: JSON.stringify((reimbursementForm.expense_categories || []).map(item => ({ value: item.value, label: item.label }))),
+      description: '报销费用分类列表',
+      is_public: true,
+      value_type: 'json',
+    })
+    // 检测分类 value 是否被修改过，需要把已有报销单的旧 value 也迁移到新 value
+    const migrations = []
+    const seenNewValues = new Set()
+    for (const item of reimbursementForm.expense_categories || []) {
+      const oldValue = item._original_value
+      const newValue = (item.value || '').trim()
+      if (!newValue) {
+        ElMessage.warning(`分类「${item.label || oldValue}」的 value 不能为空`)
+        saving.value = false
+        return
+      }
+      if (seenNewValues.has(newValue)) {
+        ElMessage.warning(`分类 value「${newValue}」重复，请改成唯一值`)
+        saving.value = false
+        return
+      }
+      seenNewValues.add(newValue)
+      if (oldValue && oldValue !== newValue) {
+        migrations.push({ oldValue, newValue })
+      }
+    }
+    if (migrations.length) {
+      try {
+        let totalUpdated = 0
+        for (const m of migrations) {
+          const res = await migrateReimbursementExpenseCategory(m.oldValue, m.newValue)
+          totalUpdated += res.updated || 0
+        }
+        ElMessage.success(`报销设置保存成功，已迁移 ${totalUpdated} 张历史报销单的 expense_category`)
+      } catch (error) {
+        ElMessage.warning(`报销设置已保存，但部分历史报销单迁移失败：${error.response?.data?.detail || error.message}`)
+      }
+    } else {
+      ElMessage.success('报销设置保存成功')
+    }
+    // 迁移完成后，把当前 value 标记为新的 original
+    tagOriginalValues()
     await loadSettings()
   } catch (error) {
     console.error('保存报销设置失败:', error)
@@ -722,5 +921,40 @@ onMounted(() => {
   border-radius: 4px;
   color: #f56c6c;
   font-size: 13px;
+}
+
+.payer-companies-box {
+  width: 100%;
+}
+
+.payer-companies-list {
+  min-height: 32px;
+  padding: 8px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  background: #fafafa;
+  margin-bottom: 10px;
+}
+
+.payer-companies-add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.expense-categories-box {
+  width: 100%;
+}
+
+.expense-categories-add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.category-value {
+  font-family: monospace;
+  color: #909399;
+  font-size: 12px;
 }
 </style>
