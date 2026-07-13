@@ -62,7 +62,11 @@
         <el-row :gutter="20">
           <el-col :span="8">
             <el-form-item label="合同编号" prop="contract_no">
-              <el-input v-model="formData.contract_no" />
+              <el-input v-model="formData.contract_no" placeholder="留空将自动生成">
+                <template #append>
+                  <el-button @click="formData.contract_no = generateContractNo()" title="重新生成">刷新</el-button>
+                </template>
+              </el-input>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -138,6 +142,7 @@
               <DocumentUploader
                 type="contract"
                 :show-ai-parse="true"
+                :accept-types="'.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp'"
                 :initial-value="fileInfo"
                 :refresh-key="documentUploaderKey"
                 @change="handleFileChange"
@@ -623,7 +628,7 @@ const formData = reactive({
 })
 
 const rules = {
-  contract_no: [{ required: true, message: '请输入合同编号', trigger: 'blur' }],
+  contract_no: [{ required: false, message: '合同编号留空将自动生成', trigger: 'blur' }],
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }],
   customer_id: [{ required: true, message: '请选择客户', trigger: 'change' }],
 }
@@ -782,9 +787,17 @@ const syncFormFromContract = () => {
 }
 
 // 重置表单
+// 生成合同编号：HT-YYYYMMDD-XXXX（4 位随机后缀），可由用户修改
+const generateContractNo = () => {
+  const d = new Date()
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  const rand = String(Math.floor(1000 + Math.random() * 9000))
+  return `HT-${ymd}-${rand}`
+}
+
 const resetForm = () => {
   Object.assign(formData, {
-    contract_no: '',
+    contract_no: generateContractNo(),
     name: '',
     customer_id: '',
     amount: 0,

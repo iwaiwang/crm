@@ -71,7 +71,7 @@ def _to_date(value) -> Optional[date]:
 
 
 def _generate_contract_no() -> str:
-    return f"AI-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    return f"HT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
 
 def _resolve_receivable_due_date(raw_due_date, contract_start_date: Optional[date]) -> date:
@@ -392,7 +392,10 @@ async def create_contract(contract: ContractCreate, db: AsyncSession = Depends(g
     if not customer_result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="客户不存在")
 
-    payload = contract.model_dump(exclude={"file_id", "file_url"})
+    # 编号为空时自动生成
+    contract_no = _clean_text(contract.contract_no) or _generate_contract_no()
+    payload = contract.model_dump(exclude={"file_id", "file_url", "contract_no"})
+    payload["contract_no"] = contract_no
     db_contract = Contract(**payload)
     db.add(db_contract)
 
@@ -476,7 +479,7 @@ async def confirm_ai_contract_import(
     customer = await _get_or_create_customer(contract_data.customer_id, contract_data.customer_name, db)
 
     if not _clean_text(contract_data.contract_no):
-        raise HTTPException(status_code=400, detail="合同编号不能为空")
+        contract_data.contract_no = _generate_contract_no()
     if not _clean_text(contract_data.name):
         raise HTTPException(status_code=400, detail="合同名称不能为空")
 

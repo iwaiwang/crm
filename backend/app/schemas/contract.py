@@ -15,7 +15,7 @@ class ContractStatus(str, Enum):
 
 
 class ContractBase(BaseModel):
-    contract_no: str = Field(..., description="Contract number", max_length=50)
+    contract_no: Optional[str] = Field(None, description="Contract number (auto-generated if empty)", max_length=50)
     name: str = Field(..., description="Contract name", max_length=200)
     customer_id: str = Field(..., description="Customer ID")
     amount: Decimal = Field(default=0, description="Contract amount")
