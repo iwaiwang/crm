@@ -9,6 +9,13 @@
         <el-button type="primary" @click="openAddDialog">
           <el-icon><Plus /></el-icon> 新增报销单
         </el-button>
+        <el-button
+          type="success"
+          :disabled="selectedReimbursements.length === 0"
+          @click="exportToExcel"
+        >
+          <el-icon><Download /></el-icon> 导出 Excel ({{ selectedReimbursements.length }})
+        </el-button>
       </div>
     </div>
 
@@ -89,7 +96,13 @@
 
     <!-- 报销单列表 -->
     <el-card class="table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <div class="statistics-bar" v-if="selectedReimbursements.length > 0">
+        <el-tag type="primary" size="large">已选择 {{ selectedReimbursements.length }} 张报销单</el-tag>
+        <span class="stat-item">合计金额：<span class="stat-value">¥{{ selectedTotalAmount.toLocaleString() }}</span></span>
+        <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+      </div>
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange" ref="tableRef">
+        <el-table-column type="selection" width="55" />
         <el-table-column label="编号" width="120">
           <template #default="{ row }">
             <el-tooltip :content="row.id" placement="top">
@@ -326,9 +339,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, MagicStick } from '@element-plus/icons-vue'
+import { Plus, MagicStick, Download } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
 import {
   getReimbursements,
   createReimbursement,
@@ -356,11 +370,86 @@ const showApproveDialog = ref(false)
 const showRejectDialog = ref(false)
 const formRef = ref(null)
 const rejectFormRef = ref(null)
+const tableRef = ref(null)
 const tableData = ref([])
 const purchaseInvoices = ref([])
 const contracts = ref([])
 const payerCompanies = ref([])
 const expenseCategories = ref([])
+const selectedReimbursements = ref([])
+
+const selectedTotalAmount = computed(() => {
+  return selectedReimbursements.value.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
+})
+
+const handleSelectionChange = (selection) => {
+  selectedReimbursements.value = selection
+}
+
+const clearSelection = () => {
+  tableRef.value?.clearSelection()
+  selectedReimbursements.value = []
+}
+
+const exportToExcel = () => {
+  if (selectedReimbursements.value.length === 0) {
+    ElMessage.warning('请先选择要导出的报销单')
+    return
+  }
+  const rows = selectedReimbursements.value.map((r, idx) => ({
+    '序号': idx + 1,
+    '编号': formatId(r.id),
+    '完整编号': r.id,
+    '供应商/收款方': r.supplier_name || '',
+    '税号': r.supplier_tax_id || '',
+    '开户行': r.supplier_bank_name || '',
+    '银行账号': r.supplier_bank_account || '',
+    '报销金额(不含税)': Number(r.amount || 0),
+    '税额': Number(r.tax_amount || 0),
+    '价税合计': Number(r.total_amount || 0),
+    '费用分类': getCategoryLabel(r.expense_category),
+    '支付方': r.payer_company || '',
+    '状态': getStatusLabel(r.status),
+    '录入人': r.creator_name || '',
+    '审核人': r.approver_name || '',
+    '支付确认人': r.payer_name || '',
+    '创建时间': formatDate(r.created_at),
+    '审核时间': r.approved_at ? formatDate(r.approved_at) : '',
+    '支付时间': r.paid_at ? formatDate(r.paid_at) : '',
+    '驳回原因': r.reject_reason || '',
+    '备注': r.remark || '',
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 6 },   // 序号
+    { wch: 14 },  // 编号
+    { wch: 36 },  // 完整编号
+    { wch: 20 },  // 供应商
+    { wch: 18 },  // 税号
+    { wch: 20 },  // 开户行
+    { wch: 22 },  // 银行账号
+    { wch: 14 },  // 报销金额
+    { wch: 12 },  // 税额
+    { wch: 14 },  // 价税合计
+    { wch: 12 },  // 费用分类
+    { wch: 18 },  // 支付方
+    { wch: 10 },  // 状态
+    { wch: 12 },  // 录入人
+    { wch: 12 },  // 审核人
+    { wch: 12 },  // 支付确认人
+    { wch: 20 },  // 创建时间
+    { wch: 20 },  // 审核时间
+    { wch: 20 },  // 支付时间
+    { wch: 24 },  // 驳回原因
+    { wch: 30 },  // 备注
+  ]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '报销单')
+  const dateStr = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(wb, `报销单导出_${dateStr}.xlsx`)
+  ElMessage.success(`已导出 ${rows.length} 张报销单`)
+}
 const fileInfo = ref(null)
 const documentUploaderKey = ref(0)
 const statistics = ref({
@@ -924,6 +1013,28 @@ onMounted(() => {
 
 .reim-id:hover {
   text-decoration: underline;
+}
+
+.statistics-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f0f9ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #bae6ff;
+}
+
+.statistics-bar .stat-item {
+  font-size: 14px;
+  color: #606266;
+}
+
+.statistics-bar .stat-value {
+  font-weight: bold;
+  color: #409eff;
+  font-size: 16px;
 }
 
 .form-tip {
