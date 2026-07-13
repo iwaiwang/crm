@@ -90,6 +90,13 @@
     <!-- 报销单列表 -->
     <el-card class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
+        <el-table-column label="编号" width="120">
+          <template #default="{ row }">
+            <el-tooltip :content="row.id" placement="top">
+              <span class="reim-id" @click="copyId(row.id)">{{ formatId(row.id) }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column prop="supplier_name" label="供应商/收款方" width="150" />
         <el-table-column prop="payer_company" label="支付方" width="140">
           <template #default="{ row }">
@@ -463,6 +470,22 @@ const getStatusType = (status) => statusTypes[status] || 'info'
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+// 报销单编号显示用：BX + UUID 前 8 位（便于区分）
+const formatId = (id) => {
+  if (!id) return ''
+  const short = id.replace(/-/g, '').slice(0, 8).toUpperCase()
+  return `BX-${short}`
+}
+
+const copyId = async (id) => {
+  try {
+    await navigator.clipboard.writeText(id)
+    ElMessage.success('已复制完整编号')
+  } catch (e) {
+    ElMessage.warning('复制失败，请手动选择')
+  }
 }
 
 // 收款方自动补全
@@ -889,6 +912,18 @@ onMounted(() => {
 
 .text-muted {
   color: #c0c4cc;
+}
+
+.reim-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reim-id:hover {
+  text-decoration: underline;
 }
 
 .form-tip {
