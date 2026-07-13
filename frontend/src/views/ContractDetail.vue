@@ -339,14 +339,14 @@
               :on-success="handleFileUploadSuccess"
               :on-error="handleFileUploadError"
               :show-file-list="false"
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp"
               multiple
             >
               <el-button type="primary" :loading="uploading">
                 <el-icon><Upload /></el-icon> 选择文件
               </el-button>
             </el-upload>
-            <p class="upload-tip">支持 PDF、JPG、PNG、DOC、DOCX 格式，可多选</p>
+            <p class="upload-tip">支持 PDF、DOC、DOCX、JPG、PNG、GIF、BMP、WebP 格式，可多选</p>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -1176,8 +1176,9 @@ const handleFileUploadSuccess = (response) => {
 // 处理文件上传失败
 const handleFileUploadError = (error) => {
   uploading.value = false
+  const msg = error?.response?.data?.detail || error?.message || '上传失败'
   console.error('上传失败:', error)
-  ElMessage.error('上传失败')
+  ElMessage.error(msg)
 }
 
 // 监听路由变化（支持浏览器后退）
