@@ -36,7 +36,7 @@ from app.services.ai_parser import ai_service
 
 router = APIRouter()
 
-SUPPORTED_CONTRACT_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png"]
+SUPPORTED_CONTRACT_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "gif", "bmp", "webp"]
 
 
 def _clean_text(value: Optional[str]) -> Optional[str]:
