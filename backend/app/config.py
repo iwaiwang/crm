@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """应用配置"""
 
     # 应用基础配置
-    APP_NAME: str = "小微企业 CRM 系统"
+    APP_NAME: str = "Pyxis管理系统"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 

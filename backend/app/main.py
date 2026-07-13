@@ -1,5 +1,5 @@
 """
-小微企业 CRM 系统
+Pyxis管理系统
 """
 import os
 import sys

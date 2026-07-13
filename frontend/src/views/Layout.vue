@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <el-aside width="220px" class="sidebar">
       <div class="logo">
-        <h3>CRM 管理系统</h3>
+        <h3>Pyxis管理系统</h3>
       </div>
       <el-menu
         :default-active="$route.path"
