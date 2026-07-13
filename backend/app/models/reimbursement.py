@@ -33,6 +33,12 @@ class Reimbursement(Base):
     payer_company = Column(String(100), nullable=True, comment="支付方公司名称")
     remark = Column(Text, comment="备注说明")
 
+    # 报销种类：invoice_company(发票·公司直付) / invoice_personal(发票·个人垫付) / allowance_travel(出差津贴)
+    reimbursement_kind = Column(String(30), default="invoice_company", comment="报销种类")
+    travel_start_date = Column(Date, nullable=True, comment="出差开始日期(津贴)")
+    travel_end_date = Column(Date, nullable=True, comment="出差结束日期(津贴)")
+    travel_destination = Column(String(200), nullable=True, comment="出差地点(津贴)")
+
     # 附件
     file_id = Column(String(36), comment="附件文件ID")
     file_url = Column(String(500), comment="附件文件URL")

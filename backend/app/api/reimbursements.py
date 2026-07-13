@@ -26,6 +26,9 @@ from app.schemas.reimbursement import (
     ReimbursementStatistics,
     REIMBURSEMENT_CATEGORY_LABELS,
     REIMBURSEMENT_STATUS_LABELS,
+    REIMBURSEMENT_KIND_LABELS,
+    REIMBURSEMENT_KIND_INVOICE_COMPANY,
+    REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL,
     AiReimbursementDraft,
     AiReimbursementPreviewRequest,
     AiReimbursementPreviewResponse,
@@ -178,6 +181,7 @@ async def get_reimbursements(
     status: Optional[str] = None,
     expense_category: Optional[str] = None,
     payer_company: Optional[str] = None,
+    reimbursement_kind: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     search: Optional[str] = None,
@@ -206,6 +210,10 @@ async def get_reimbursements(
     if payer_company:
         query = query.where(Reimbursement.payer_company == payer_company)
 
+    # 报销种类筛选
+    if reimbursement_kind:
+        query = query.where(Reimbursement.reimbursement_kind == reimbursement_kind)
+
     # 年份筛选
     if year:
         query = query.where(extract('year', Reimbursement.created_at) == year)
@@ -231,6 +239,8 @@ async def get_reimbursements(
         count_query = count_query.where(Reimbursement.expense_category == expense_category)
     if payer_company:
         count_query = count_query.where(Reimbursement.payer_company == payer_company)
+    if reimbursement_kind:
+        count_query = count_query.where(Reimbursement.reimbursement_kind == reimbursement_kind)
     if year:
         count_query = count_query.where(extract('year', Reimbursement.created_at) == year)
     if month:
@@ -415,6 +425,16 @@ async def create_reimbursement(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="合同不存在")
 
+    # 报销种类业务规则
+    kind = reimbursement.reimbursement_kind or REIMBURSEMENT_KIND_INVOICE_COMPANY
+    if kind == REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL:
+        # 出差津贴：无税，分类强制差旅
+        reimbursement.tax_amount = Decimal("0")
+        reimbursement.total_amount = reimbursement.amount
+        reimbursement.expense_category = "travel"
+        # 津贴无需税号
+        reimbursement.supplier_tax_id = None
+
     # 创建报销单
     db_reimbursement = Reimbursement(
         **reimbursement.model_dump(),
@@ -458,6 +478,17 @@ async def update_reimbursement(
     update_data = reimbursement.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_reimbursement, field, value)
+
+    # 报销种类业务规则：津贴场景强制非税、分类为差旅、税号清空
+    effective_kind = update_data.get("reimbursement_kind", None) or db_reimbursement.reimbursement_kind
+    if effective_kind == REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL:
+        if "amount" in update_data or "tax_amount" in update_data or "total_amount" in update_data:
+            db_reimbursement.tax_amount = Decimal("0")
+            db_reimbursement.total_amount = db_reimbursement.amount or Decimal("0")
+        if "expense_category" not in update_data:
+            db_reimbursement.expense_category = "travel"
+        if "supplier_tax_id" not in update_data:
+            db_reimbursement.supplier_tax_id = None
 
     # 驳回状态编辑后自动重置为草稿
     if db_reimbursement.status == "rejected":

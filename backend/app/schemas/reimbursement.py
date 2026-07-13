@@ -36,6 +36,18 @@ class ReimbursementCategory(str, Enum):
     OTHER = "other"
 
 
+# 报销种类
+REIMBURSEMENT_KIND_INVOICE_COMPANY = "invoice_company"
+REIMBURSEMENT_KIND_INVOICE_PERSONAL = "invoice_personal"
+REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL = "allowance_travel"
+
+REIMBURSEMENT_KIND_LABELS = {
+    "invoice_company": "发票·公司直付",
+    "invoice_personal": "发票·个人垫付",
+    "allowance_travel": "出差津贴",
+}
+
+
 # 费用分类中文映射
 REIMBURSEMENT_CATEGORY_LABELS = {
     "catering": "餐饮",
@@ -81,6 +93,10 @@ class ReimbursementBase(BaseModel):
     remark: Optional[str] = Field(None, description="备注说明")
     file_id: Optional[str] = Field(None, description="附件文件ID")
     file_url: Optional[str] = Field(None, description="附件文件URL")
+    reimbursement_kind: Optional[str] = Field(REIMBURSEMENT_KIND_INVOICE_COMPANY, description="报销种类")
+    travel_start_date: Optional[date] = Field(None, description="出差开始日期(津贴)")
+    travel_end_date: Optional[date] = Field(None, description="出差结束日期(津贴)")
+    travel_destination: Optional[str] = Field(None, description="出差地点(津贴)")
 
 
 class ReimbursementCreate(ReimbursementBase):
@@ -100,6 +116,10 @@ class ReimbursementUpdate(BaseModel):
     remark: Optional[str] = None
     file_id: Optional[str] = None
     file_url: Optional[str] = None
+    reimbursement_kind: Optional[str] = None
+    travel_start_date: Optional[date] = None
+    travel_end_date: Optional[date] = None
+    travel_destination: Optional[str] = None
 
 
 class ReimbursementReject(BaseModel):

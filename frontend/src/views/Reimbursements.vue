@@ -87,6 +87,11 @@
             <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
           </el-select>
         </el-form-item>
+        <el-form-item label="种类">
+          <el-select v-model="searchForm.reimbursement_kind" placeholder="全部种类" clearable @change="handleSearch" style="width: 180px">
+            <el-option v-for="k in kindOptions" :key="k.value" :label="k.label" :value="k.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -103,6 +108,13 @@
       </div>
       <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange" ref="tableRef">
         <el-table-column type="selection" width="55" />
+        <el-table-column label="种类" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.reimbursement_kind === 'allowance_travel' ? 'warning' : (row.reimbursement_kind === 'invoice_personal' ? 'success' : '')" size="small">
+              {{ getKindLabel(row.reimbursement_kind) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="编号" width="120">
           <template #default="{ row }">
             <el-tooltip :content="row.id" placement="top">
@@ -180,6 +192,39 @@
       direction="rtl"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="120px">
+        <!-- 报销种类 -->
+        <el-divider content-position="left">报销种类</el-divider>
+        <el-form-item label="种类" prop="reimbursement_kind">
+          <el-radio-group v-model="formData.reimbursement_kind">
+            <el-radio v-for="k in kindOptions" :key="k.value" :label="k.value">{{ k.label }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="出差信息" v-if="formData.reimbursement_kind === 'allowance_travel'">
+          <el-row :gutter="12" style="width: 100%">
+            <el-col :span="8">
+              <el-date-picker
+                v-model="formData.travel_start_date"
+                type="date"
+                placeholder="开始日期"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-date-picker
+                v-model="formData.travel_end_date"
+                type="date"
+                placeholder="结束日期"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-input v-model="formData.travel_destination" placeholder="出差地点（可选）" />
+            </el-col>
+          </el-row>
+        </el-form-item>
+
         <!-- 收款方信息 -->
         <el-divider content-position="left">收款方信息</el-divider>
         <el-form-item label="供应商/收款方" prop="supplier_name">
@@ -223,24 +268,24 @@
         <el-divider content-position="left">金额信息</el-divider>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="报销金额(不含税)" prop="amount">
+            <el-form-item :label="formData.reimbursement_kind === 'allowance_travel' ? '津贴金额' : '报销金额(不含税)'" prop="amount">
               <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="12" v-if="formData.reimbursement_kind !== 'allowance_travel'">
             <el-form-item label="税额">
               <el-input-number v-model="formData.tax_amount" :min="0" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="价税合计">
+        <el-form-item :label="formData.reimbursement_kind === 'allowance_travel' ? '合计' : '价税合计'">
           <el-input-number v-model="formData.total_amount" :min="0" :precision="2" style="width: 100%" disabled />
         </el-form-item>
 
         <!-- 分类和关联 -->
         <el-divider content-position="left">分类与关联</el-divider>
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :span="12" v-if="formData.reimbursement_kind !== 'allowance_travel'">
             <el-form-item label="费用分类" prop="expense_category">
               <el-select v-model="formData.expense_category" style="width: 100%" filterable allow-create>
                 <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
@@ -263,7 +308,7 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="16">
+        <el-row :gutter="16" v-if="formData.reimbursement_kind !== 'allowance_travel'">
           <el-col :span="12">
             <el-form-item label="关联发票">
               <el-select v-model="formData.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
@@ -279,6 +324,7 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <div class="form-tip" v-if="formData.reimbursement_kind === 'allowance_travel'">出差津贴无需税额/费用分类（自动归入"差旅"），无需关联发票。可上传 Excel 出差明细作为附件（可选）。</div>
 
         <!-- 附件上传 -->
         <el-divider content-position="left">附件</el-divider>
@@ -400,6 +446,7 @@ const exportToExcel = () => {
     '序号': idx + 1,
     '编号': formatId(r.id),
     '完整编号': r.id,
+    '种类': getKindLabel(r.reimbursement_kind),
     '供应商/收款方': r.supplier_name || '',
     '税号': r.supplier_tax_id || '',
     '开户行': r.supplier_bank_name || '',
@@ -409,6 +456,9 @@ const exportToExcel = () => {
     '价税合计': Number(r.total_amount || 0),
     '费用分类': getCategoryLabel(r.expense_category),
     '支付方': r.payer_company || '',
+    '出差开始': r.travel_start_date || '',
+    '出差结束': r.travel_end_date || '',
+    '出差地点': r.travel_destination || '',
     '状态': getStatusLabel(r.status),
     '录入人': r.creator_name || '',
     '审核人': r.approver_name || '',
@@ -425,6 +475,7 @@ const exportToExcel = () => {
     { wch: 6 },   // 序号
     { wch: 14 },  // 编号
     { wch: 36 },  // 完整编号
+    { wch: 14 },  // 种类
     { wch: 20 },  // 供应商
     { wch: 18 },  // 税号
     { wch: 20 },  // 开户行
@@ -434,6 +485,9 @@ const exportToExcel = () => {
     { wch: 14 },  // 价税合计
     { wch: 12 },  // 费用分类
     { wch: 18 },  // 支付方
+    { wch: 14 },  // 出差开始
+    { wch: 14 },  // 出差结束
+    { wch: 18 },  // 出差地点
     { wch: 10 },  // 状态
     { wch: 12 },  // 录入人
     { wch: 12 },  // 审核人
@@ -468,11 +522,23 @@ const searchForm = reactive({
   status: '',
   expense_category: '',
   payer_company: '',
+  reimbursement_kind: '',
   year: null,
   search: '',
 })
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+
+const kindOptions = [
+  { value: 'invoice_company', label: '发票·公司直付' },
+  { value: 'invoice_personal', label: '发票·个人垫付' },
+  { value: 'allowance_travel', label: '出差津贴' },
+]
+
+const getKindLabel = (kind) => {
+  const found = kindOptions.find(o => o.value === kind)
+  return found ? found.label : (kind || '-')
+}
 
 const formData = reactive({
   id: '',
@@ -490,6 +556,10 @@ const formData = reactive({
   remark: '',
   file_id: '',
   file_url: '',
+  reimbursement_kind: 'invoice_company',
+  travel_start_date: null,
+  travel_end_date: null,
+  travel_destination: '',
 })
 
 const approveForm = reactive({
@@ -613,6 +683,7 @@ const loadReimbursements = async () => {
       status: searchForm.status,
       expense_category: searchForm.expense_category,
       payer_company: searchForm.payer_company,
+      reimbursement_kind: searchForm.reimbursement_kind,
       year: searchForm.year,
       search: searchForm.search,
     })
@@ -682,6 +753,7 @@ const handleReset = () => {
   searchForm.status = ''
   searchForm.expense_category = ''
   searchForm.payer_company = ''
+  searchForm.reimbursement_kind = ''
   searchForm.year = null
   searchForm.search = ''
   handleSearch()
@@ -705,6 +777,10 @@ const openAddDialog = () => {
     remark: '',
     file_id: '',
     file_url: '',
+    reimbursement_kind: 'invoice_company',
+    travel_start_date: null,
+    travel_end_date: null,
+    travel_destination: '',
   })
   fileInfo.value = null
   documentUploaderKey.value++
@@ -733,6 +809,10 @@ const handleEdit = (row) => {
     remark: row.remark || '',
     file_id: row.file_id || '',
     file_url: row.file_url || '',
+    reimbursement_kind: row.reimbursement_kind || 'invoice_company',
+    travel_start_date: row.travel_start_date || null,
+    travel_end_date: row.travel_end_date || null,
+    travel_destination: row.travel_destination || '',
   })
   // 设置文件信息
   if (row.file_id && row.file_url) {
@@ -771,9 +851,18 @@ const handleSave = async () => {
     if (valid) {
       submitting.value = true
       try {
+        const isAllowance = formData.reimbursement_kind === 'allowance_travel'
         const data = {
           ...formData,
-          total_amount: Number(formData.amount) + Number(formData.tax_amount),
+          // 津贴场景：无税，分类强制差旅
+          ...(isAllowance ? {
+            tax_amount: 0,
+            total_amount: Number(formData.amount),
+            expense_category: 'travel',
+            supplier_tax_id: null,
+          } : {
+            total_amount: Number(formData.amount) + Number(formData.tax_amount),
+          }),
         }
         // 移除空字符串字段
         Object.keys(data).forEach(key => {
@@ -781,6 +870,9 @@ const handleSave = async () => {
             data[key] = null
           }
         })
+        // 日期空串转 null
+        if (data.travel_start_date === '') data.travel_start_date = null
+        if (data.travel_end_date === '') data.travel_end_date = null
         if (formData.id) {
           await updateReimbursement(formData.id, data)
           ElMessage.success('更新成功')
