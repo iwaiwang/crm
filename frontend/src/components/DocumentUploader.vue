@@ -16,7 +16,7 @@
             拖拽文件到此处 或 <span class="upload-link">点击上传</span>
           </div>
           <div class="upload-hint">
-            支持格式：{{ acceptTypes.replace(/\./g, '').toUpperCase() }} (最大 10MB)
+            支持格式：{{ acceptTypes.replace(/\./g, '').toUpperCase() }} (最大 50MB)
           </div>
         </div>
       </el-upload>
@@ -169,8 +169,8 @@ const handleFileChange = async (file) => {
   const fileIndex = fileList.indexOf(file)
 
   // 验证文件大小
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.error('文件大小超过 10MB 限制')
+  if (file.size > 50 * 1024 * 1024) {
+    ElMessage.error('文件大小超过 50MB 限制')
     if (fileIndex >= 0) uploadRef.value?.handleRemove(file)
     return
   }

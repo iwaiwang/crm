@@ -26,7 +26,7 @@ UPLOAD_INVOICE_DIR = os.path.join(UPLOAD_BASE_DIR, "invoices")
 
 ALLOWED_CONTRACT_TYPES = [".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]
 ALLOWED_INVOICE_TYPES = [".pdf", ".jpg", ".jpeg", ".png"]
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 def ensure_upload_dirs():
