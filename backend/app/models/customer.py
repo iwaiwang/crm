@@ -12,9 +12,6 @@ class Customer(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(200), nullable=False, comment="客户名称")
-    contact = Column(String(100), comment="联系人")
-    phone = Column(String(50), comment="联系电话")
-    email = Column(String(100), comment="邮箱")
     address = Column(Text, comment="地址")
     category = Column(
         SQLEnum("potential", "normal", "vip", name="customer_category"),
@@ -34,6 +31,7 @@ class Customer(Base):
 
     # 关联关系
     # 注意：incomes 和 expenses 不使用级联删除，由 API 手动处理
+    contacts = relationship("CustomerContact", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
     contracts = relationship("Contract", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
     projects = relationship("Project", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
     incomes = relationship("Income", back_populates="customer", passive_deletes=True)
