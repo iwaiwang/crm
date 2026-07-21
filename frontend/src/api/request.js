@@ -8,11 +8,38 @@ const request = axios.create({
   timeout: 120000,  // 120 秒超时，给 AI 解析足够的时间
 })
 
+const getTokenExpiry = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+const isTokenExpired = (token) => {
+  const exp = getTokenExpiry(token)
+  return exp ? Date.now() >= exp : false
+}
+
+const redirectToLogin = (message) => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  if (router.currentRoute.value.path !== '/login') {
+    router.push('/login')
+    ElMessage.error(message || '登录已过期，请重新登录')
+  }
+}
+
 // 请求拦截器
 request.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
     if (token) {
+      if (isTokenExpired(token)) {
+        redirectToLogin('登录已过期，请重新登录')
+        return Promise.reject(new Error('Token expired'))
+      }
       config.headers.Authorization = `Bearer ${token}`
     }
     // 过滤掉空值参数
@@ -40,14 +67,10 @@ request.interceptors.response.use(
       const { status, data } = error.response
 
       if (status === 401) {
-        // 登录请求返回 401 时，不跳转到登录页，直接显示错误信息
         if (error.config.url.includes('/auth/login')) {
           ElMessage.error(data.detail || '用户名或密码错误')
         } else {
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
-          router.push('/login')
-          ElMessage.error('登录已过期，请重新登录')
+          redirectToLogin('登录已过期，请重新登录')
         }
       } else if (status === 403) {
         ElMessage.error('没有权限访问此资源')

@@ -140,13 +140,15 @@ async def _load_ai_config(db: AsyncSession) -> None:
 
 
 async def _load_company_info(db: AsyncSession) -> dict:
+    from app.config import settings as app_settings
+
     result = await db.execute(
         select(Setting).where(Setting.key.in_([SettingKeys.COMPANY_NAME, SettingKeys.COMPANY_TAX_ID]))
     )
     company_info = {setting.key: setting.value for setting in result.scalars().all()}
     return {
-        "company_name": _clean_text(company_info.get(SettingKeys.COMPANY_NAME)),
-        "company_tax_id": _clean_text(company_info.get(SettingKeys.COMPANY_TAX_ID)),
+        "company_name": _clean_text(company_info.get(SettingKeys.COMPANY_NAME)) or app_settings.COMPANY_NAME,
+        "company_tax_id": _clean_text(company_info.get(SettingKeys.COMPANY_TAX_ID)) or app_settings.COMPANY_TAX_ID,
     }
 
 
@@ -160,7 +162,7 @@ def _resolve_invoice_upload(file_id: str) -> tuple[str, str, str, str]:
     raise HTTPException(status_code=404, detail="发票文件不存在")
 
 
-def _infer_invoice_direction(
+async def _infer_invoice_direction(
     *,
     buyer_name: Optional[str],
     buyer_tax_id: Optional[str],
@@ -168,6 +170,7 @@ def _infer_invoice_direction(
     seller_tax_id: Optional[str],
     company_name: Optional[str],
     company_tax_id: Optional[str],
+    db: AsyncSession,
 ) -> InvoiceDirectionType:
     normalized_company_name = _normalize_party_name(company_name)
     normalized_buyer = _normalize_party_name(buyer_name)
@@ -184,6 +187,19 @@ def _infer_invoice_direction(
         return InvoiceDirectionType.SALES
     if normalized_company_name and normalized_buyer and normalized_company_name == normalized_buyer:
         return InvoiceDirectionType.PURCHASE
+
+    # Company info not configured — try matching against known customers
+    if not normalized_company_name and not cleaned_company_tax_id:
+        if normalized_buyer or normalized_seller:
+            result = await db.execute(
+                select(Customer.name).where(Customer.name.isnot(None))
+            )
+            known_names = {_normalize_party_name(name) for (name,) in result.all() if name}
+            if normalized_buyer and normalized_buyer in known_names:
+                return InvoiceDirectionType.SALES
+            if normalized_seller and normalized_seller in known_names:
+                return InvoiceDirectionType.PURCHASE
+
     return InvoiceDirectionType.SALES
 
 
@@ -474,13 +490,14 @@ async def preview_ai_invoice_import(
         ai_parsed=True,
         parse_confidence=ai_result.get("confidence"),
     )
-    invoice_draft.invoice_type = _infer_invoice_direction(
+    invoice_draft.invoice_type = await _infer_invoice_direction(
         buyer_name=invoice_draft.buyer_name,
         buyer_tax_id=invoice_draft.buyer_tax_id,
         seller_name=invoice_draft.seller_name,
         seller_tax_id=invoice_draft.seller_tax_id,
         company_name=company_info.get("company_name"),
         company_tax_id=company_info.get("company_tax_id"),
+        db=db,
     )
 
     contract_matches = await _match_contracts_for_invoice(invoice=invoice_draft, db=db)
@@ -561,6 +578,7 @@ async def confirm_ai_invoice_import(
     current_user: User = Depends(require_menu_permission('invoices')),
 ):
     del current_user
+    company_info = await _load_company_info(db)
     invoice_data = payload.invoice
 
     if not _clean_text(invoice_data.invoice_no):
@@ -575,6 +593,20 @@ async def confirm_ai_invoice_import(
         if not contract_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="关联合同不存在")
 
+    invoice_type = invoice_data.invoice_type or InvoiceDirectionType.SALES
+    buyer_name = _clean_text(invoice_data.buyer_name)
+    buyer_tax_id = _clean_text(invoice_data.buyer_tax_id)
+    seller_name = _clean_text(invoice_data.seller_name)
+    seller_tax_id = _clean_text(invoice_data.seller_tax_id)
+
+    # 自动补填本公司信息
+    if invoice_type == InvoiceDirectionType.PURCHASE and not buyer_name:
+        buyer_name = company_info.get("company_name")
+        buyer_tax_id = company_info.get("company_tax_id")
+    elif invoice_type == InvoiceDirectionType.SALES and not seller_name:
+        seller_name = company_info.get("company_name")
+        seller_tax_id = company_info.get("company_tax_id")
+
     invoice_payload = InvoiceCreate(
         invoice_code=_clean_text(invoice_data.invoice_code),
         invoice_number=_clean_text(invoice_data.invoice_number),
@@ -587,11 +619,11 @@ async def confirm_ai_invoice_import(
         tax_amount=_to_decimal(invoice_data.tax_amount, "0"),
         total_amount=_to_decimal(invoice_data.total_amount or invoice_data.amount),
         type=invoice_data.type or InvoiceType.NORMAL,
-        invoice_type=invoice_data.invoice_type or InvoiceDirectionType.SALES,
-        buyer_name=_clean_text(invoice_data.buyer_name),
-        buyer_tax_id=_clean_text(invoice_data.buyer_tax_id),
-        seller_name=_clean_text(invoice_data.seller_name),
-        seller_tax_id=_clean_text(invoice_data.seller_tax_id),
+        invoice_type=invoice_type,
+        buyer_name=buyer_name,
+        buyer_tax_id=buyer_tax_id,
+        seller_name=seller_name,
+        seller_tax_id=seller_tax_id,
         issue_date=_to_date(invoice_data.issue_date),
         due_date=_to_date(invoice_data.due_date or invoice_data.issue_date),
         status=invoice_data.status or "normal",

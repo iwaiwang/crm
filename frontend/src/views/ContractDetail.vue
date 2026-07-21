@@ -49,6 +49,9 @@
         <el-descriptions-item label="状态">
           <el-tag :type="getStatusType(contract.status)">{{ getStatusLabel(contract.status) }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="签约日期">
+          {{ contract.sign_date || '-' }}
+        </el-descriptions-item>
         <el-descriptions-item label="开始日期">
           {{ contract.start_date || '-' }}
         </el-descriptions-item>
@@ -62,7 +65,11 @@
         <el-row :gutter="20">
           <el-col :span="8">
             <el-form-item label="合同编号" prop="contract_no">
-              <el-input v-model="formData.contract_no" />
+              <el-input v-model="formData.contract_no" placeholder="留空将自动生成">
+                <template #append>
+                  <el-button @click="formData.contract_no = generateContractNo()" title="重新生成">刷新</el-button>
+                </template>
+              </el-input>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -85,6 +92,17 @@
           <el-col :span="8">
             <el-form-item label="合同金额" prop="amount">
               <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签约日期" prop="sign_date">
+              <el-date-picker
+                v-model="formData.sign_date"
+                type="date"
+                placeholder="选择签约日期"
+                style="width: 100%"
+                value-format="YYYY-MM-DD"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -138,6 +156,7 @@
               <DocumentUploader
                 type="contract"
                 :show-ai-parse="true"
+                :accept-types="'.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp'"
                 :initial-value="fileInfo"
                 :refresh-key="documentUploaderKey"
                 @change="handleFileChange"
@@ -334,14 +353,14 @@
               :on-success="handleFileUploadSuccess"
               :on-error="handleFileUploadError"
               :show-file-list="false"
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp"
               multiple
             >
               <el-button type="primary" :loading="uploading">
                 <el-icon><Upload /></el-icon> 选择文件
               </el-button>
             </el-upload>
-            <p class="upload-tip">支持 PDF、JPG、PNG、DOC、DOCX 格式，可多选</p>
+            <p class="upload-tip">支持 PDF、DOC、DOCX、JPG、PNG、GIF、BMP、WebP 格式，可多选</p>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -503,10 +522,10 @@
         <!-- 销项发票：显示销售方（本公司）信息 - 自动填充 -->
         <el-divider content-position="left" v-if="invoiceForm.invoice_type === 'sales'">销售方信息（本公司）</el-divider>
         <el-form-item label="销售方名称" v-if="invoiceForm.invoice_type === 'sales'">
-          <el-input v-model="invoiceForm.seller_name" placeholder="销售方名称" disabled />
+          <el-input v-model="invoiceForm.seller_name" placeholder="销售方名称" />
         </el-form-item>
         <el-form-item label="销售方税号" v-if="invoiceForm.invoice_type === 'sales'">
-          <el-input v-model="invoiceForm.seller_tax_id" placeholder="销售方税号" disabled />
+          <el-input v-model="invoiceForm.seller_tax_id" placeholder="销售方税号" />
         </el-form-item>
 
         <!-- 销项发票：显示购买方输入框 -->
@@ -521,10 +540,10 @@
         <!-- 进项发票：显示购买方（本公司）信息 - 自动填充 -->
         <el-divider content-position="left" v-if="invoiceForm.invoice_type === 'purchase'">购买方信息（本公司）</el-divider>
         <el-form-item label="购买方名称" v-if="invoiceForm.invoice_type === 'purchase'">
-          <el-input v-model="invoiceForm.buyer_name" placeholder="购买方名称" disabled />
+          <el-input v-model="invoiceForm.buyer_name" placeholder="购买方名称" />
         </el-form-item>
         <el-form-item label="购买方税号" v-if="invoiceForm.invoice_type === 'purchase'">
-          <el-input v-model="invoiceForm.buyer_tax_id" placeholder="购买方税号" disabled />
+          <el-input v-model="invoiceForm.buyer_tax_id" placeholder="购买方税号" />
         </el-form-item>
 
         <!-- 进项发票：显示销售方输入框 -->
@@ -613,6 +632,7 @@ const formData = reactive({
   name: '',
   customer_id: '',
   amount: 0,
+  sign_date: '',
   start_date: '',
   end_date: '',
   status: 'signed',
@@ -623,7 +643,7 @@ const formData = reactive({
 })
 
 const rules = {
-  contract_no: [{ required: true, message: '请输入合同编号', trigger: 'blur' }],
+  contract_no: [{ required: false, message: '合同编号留空将自动生成', trigger: 'blur' }],
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }],
   customer_id: [{ required: true, message: '请选择客户', trigger: 'change' }],
 }
@@ -759,6 +779,7 @@ const syncFormFromContract = () => {
   formData.name = contract.value.name || ''
   formData.customer_id = contract.value.customer_id || ''
   formData.amount = Number(contract.value.amount) || 0
+  formData.sign_date = contract.value.sign_date || ''
   formData.start_date = contract.value.start_date || ''
   formData.end_date = contract.value.end_date || ''
   formData.status = contract.value.status || 'signed'
@@ -782,12 +803,21 @@ const syncFormFromContract = () => {
 }
 
 // 重置表单
+// 生成合同编号：HT-YYYYMMDD-XXXX（4 位随机后缀），可由用户修改
+const generateContractNo = () => {
+  const d = new Date()
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  const rand = String(Math.floor(1000 + Math.random() * 9000))
+  return `HT-${ymd}-${rand}`
+}
+
 const resetForm = () => {
   Object.assign(formData, {
-    contract_no: '',
+    contract_no: generateContractNo(),
     name: '',
     customer_id: '',
     amount: 0,
+    sign_date: '',
     start_date: '',
     end_date: '',
     status: 'signed',
@@ -1067,7 +1097,7 @@ const handleAiResult = (result) => {
     }
   }
   if (data.amount) formData.amount = parseFloat(data.amount)
-  if (data.sign_date) formData.start_date = data.sign_date
+  if (data.sign_date) formData.sign_date = data.sign_date
   if (data.start_date) formData.start_date = data.start_date
   if (data.end_date) formData.end_date = data.end_date
   if (data.payment_terms) formData.payment_terms = data.payment_terms
@@ -1163,8 +1193,9 @@ const handleFileUploadSuccess = (response) => {
 // 处理文件上传失败
 const handleFileUploadError = (error) => {
   uploading.value = false
+  const msg = error?.response?.data?.detail || error?.message || '上传失败'
   console.error('上传失败:', error)
-  ElMessage.error('上传失败')
+  ElMessage.error(msg)
 }
 
 // 监听路由变化（支持浏览器后退）

@@ -1,20 +1,26 @@
 """报销管理 API"""
 import os
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
 from sqlalchemy.orm import selectinload
-from typing import Optional
+from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 import json
+from urllib.parse import quote
+from openpyxl import Workbook
 
 from app.database import get_db
 from app.models.reimbursement import Reimbursement
 from app.models.invoice import Invoice
 from app.models.contract import Contract
+from app.models.expense import Expense
 from app.models.user import User
 from app.models.ai_config import AIConfig
+from app.models.setting import Setting
 from app.schemas.reimbursement import (
     ReimbursementCreate,
     ReimbursementUpdate,
@@ -25,6 +31,9 @@ from app.schemas.reimbursement import (
     ReimbursementStatistics,
     REIMBURSEMENT_CATEGORY_LABELS,
     REIMBURSEMENT_STATUS_LABELS,
+    REIMBURSEMENT_KIND_LABELS,
+    REIMBURSEMENT_KIND_INVOICE_COMPANY,
+    REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL,
     AiReimbursementDraft,
     AiReimbursementPreviewRequest,
     AiReimbursementPreviewResponse,
@@ -34,19 +43,112 @@ from app.api.auth import require_menu_permission, get_current_user
 from app.services import ai_service
 from app.models.supplier import Supplier
 from app.config import settings
+from app.schemas.setting import SettingKeys
 
 router = APIRouter()
+
+
+async def _get_setting_value(db: AsyncSession, key: str) -> Optional[str]:
+    result = await db.execute(select(Setting.value).where(Setting.key == key))
+    value = result.scalar_one_or_none()
+    return value.strip() if isinstance(value, str) else value
+
+
+async def _get_payer_companies(db: AsyncSession) -> List[str]:
+    """读取支付方公司名称列表"""
+    raw = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_PAYER_COMPANIES)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()]
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return []
+
+
+DEFAULT_EXPENSE_CATEGORIES = [
+    {"value": "catering", "label": "餐饮"},
+    {"value": "travel", "label": "差旅"},
+    {"value": "procurement", "label": "采购"},
+    {"value": "office", "label": "办公"},
+    {"value": "rent", "label": "房租"},
+    {"value": "utilities", "label": "水电"},
+    {"value": "salary", "label": "工资"},
+    {"value": "marketing", "label": "市场推广"},
+    {"value": "software", "label": "软件服务"},
+    {"value": "maintenance", "label": "维修维护"},
+    {"value": "training", "label": "培训"},
+    {"value": "entertainment", "label": "业务招待"},
+    {"value": "logistics", "label": "物流快递"},
+    {"value": "other", "label": "其他"},
+]
+
+
+async def _get_expense_categories(db: AsyncSession) -> List[dict]:
+    """读取费用分类列表 [{value, label}]"""
+    raw = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_EXPENSE_CATEGORIES)
+    if not raw:
+        return list(DEFAULT_EXPENSE_CATEGORIES)
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list) and data:
+            normalized = []
+            for item in data:
+                if isinstance(item, dict) and item.get("value"):
+                    value = str(item["value"]).strip()
+                    label = str(item.get("label") or value).strip()
+                    if value:
+                        normalized.append({"value": value, "label": label or value})
+                elif isinstance(item, str) and item.strip():
+                    normalized.append({"value": item.strip(), "label": item.strip()})
+            if normalized:
+                return normalized
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return list(DEFAULT_EXPENSE_CATEGORIES)
+
+
+async def _can_approve_reimbursements(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    approver_id = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_DEFAULT_APPROVER_ID)
+    return bool(approver_id and approver_id == user.id)
+
+
+async def _can_pay_reimbursements(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    payer_id = await _get_setting_value(db, SettingKeys.REIMBURSEMENT_DEFAULT_PAYER_ID)
+    return bool(payer_id and payer_id == user.id)
+
+
+async def _can_view_all_reimbursements(db: AsyncSession, user: User) -> bool:
+    return (
+        user.role == "admin"
+        or await _can_approve_reimbursements(db, user)
+        or await _can_pay_reimbursements(db, user)
+    )
 
 
 def _get_status_label(status: str) -> str:
     return REIMBURSEMENT_STATUS_LABELS.get(status, status)
 
 
-def _get_category_label(category: str) -> str:
+def _get_category_label(category: str, categories: Optional[List[dict]] = None) -> str:
+    if categories:
+        for item in categories:
+            if item.get("value") == category:
+                return item.get("label") or category
     return REIMBURSEMENT_CATEGORY_LABELS.get(category, category)
 
 
-async def _enrich_reimbursement_response(db: AsyncSession, reimbursement: Reimbursement) -> ReimbursementResponse:
+async def _enrich_reimbursement_response(
+    db: AsyncSession,
+    reimbursement: Reimbursement,
+    current_user: Optional[User] = None,
+) -> ReimbursementResponse:
     """为报销单响应添加用户名称"""
     response_data = ReimbursementResponse.model_validate(reimbursement).model_dump()
 
@@ -68,6 +170,12 @@ async def _enrich_reimbursement_response(db: AsyncSession, reimbursement: Reimbu
         payer = payer_result.scalar_one_or_none()
         response_data["payer_name"] = payer.username if payer else None
 
+    if current_user:
+        can_approve = await _can_approve_reimbursements(db, current_user)
+        can_pay = await _can_pay_reimbursements(db, current_user)
+        response_data["can_approve"] = bool(can_approve and reimbursement.status == "pending")
+        response_data["can_pay"] = bool(can_pay and reimbursement.status == "approved")
+
     return ReimbursementResponse(**response_data)
 
 
@@ -77,6 +185,8 @@ async def get_reimbursements(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
     expense_category: Optional[str] = None,
+    payer_company: Optional[str] = None,
+    reimbursement_kind: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     search: Optional[str] = None,
@@ -84,11 +194,13 @@ async def get_reimbursements(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销单列表"""
+    can_view_all = await _can_view_all_reimbursements(db, current_user)
+
     # 构建基础查询
     query = select(Reimbursement)
 
-    # 非管理员只能看自己创建的
-    if current_user.role != "admin":
+    # 普通用户只能看自己创建的；指定审核/支付人可看全部
+    if not can_view_all:
         query = query.where(Reimbursement.created_by == current_user.id)
 
     # 状态筛选
@@ -99,6 +211,14 @@ async def get_reimbursements(
     if expense_category:
         query = query.where(Reimbursement.expense_category == expense_category)
 
+    # 支付方筛选
+    if payer_company:
+        query = query.where(Reimbursement.payer_company == payer_company)
+
+    # 报销种类筛选
+    if reimbursement_kind:
+        query = query.where(Reimbursement.reimbursement_kind == reimbursement_kind)
+
     # 年份筛选
     if year:
         query = query.where(extract('year', Reimbursement.created_at) == year)
@@ -107,24 +227,34 @@ async def get_reimbursements(
     if month:
         query = query.where(extract('month', Reimbursement.created_at) == month)
 
-    # 搜索
+    # 搜索（供应商名称或支付方）
     if search:
-        query = query.where(Reimbursement.supplier_name.contains(search))
+        query = query.where(
+            Reimbursement.supplier_name.contains(search)
+            | Reimbursement.payer_company.contains(search)
+        )
 
     # 获取总数
     count_query = select(func.count()).select_from(Reimbursement)
-    if current_user.role != "admin":
+    if not can_view_all:
         count_query = count_query.where(Reimbursement.created_by == current_user.id)
     if status:
         count_query = count_query.where(Reimbursement.status == status)
     if expense_category:
         count_query = count_query.where(Reimbursement.expense_category == expense_category)
+    if payer_company:
+        count_query = count_query.where(Reimbursement.payer_company == payer_company)
+    if reimbursement_kind:
+        count_query = count_query.where(Reimbursement.reimbursement_kind == reimbursement_kind)
     if year:
         count_query = count_query.where(extract('year', Reimbursement.created_at) == year)
     if month:
         count_query = count_query.where(extract('month', Reimbursement.created_at) == month)
     if search:
-        count_query = count_query.where(Reimbursement.supplier_name.contains(search))
+        count_query = count_query.where(
+            Reimbursement.supplier_name.contains(search)
+            | Reimbursement.payer_company.contains(search)
+        )
 
     total_result = await db.execute(count_query)
     total = total_result.scalar()
@@ -139,7 +269,7 @@ async def get_reimbursements(
     # 响应
     items = []
     for r in reimbursements:
-        items.append(await _enrich_reimbursement_response(db, r))
+        items.append(await _enrich_reimbursement_response(db, r, current_user))
 
     return ReimbursementListResponse(total=total, items=items)
 
@@ -151,10 +281,12 @@ async def get_reimbursement_statistics(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销统计"""
+    can_view_all = await _can_view_all_reimbursements(db, current_user)
+
     # 构建基础查询
     def get_base_query():
         query = select(Reimbursement)
-        if current_user.role != "admin":
+        if not can_view_all:
             query = query.where(Reimbursement.created_by == current_user.id)
         if year:
             query = query.where(extract('year', Reimbursement.created_at) == year)
@@ -162,7 +294,7 @@ async def get_reimbursement_statistics(
 
     # 待审核金额
     pending_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "pending")
-    if current_user.role != "admin":
+    if not can_view_all:
         pending_query = pending_query.where(Reimbursement.created_by == current_user.id)
     if year:
         pending_query = pending_query.where(extract('year', Reimbursement.created_at) == year)
@@ -171,7 +303,7 @@ async def get_reimbursement_statistics(
 
     # 待支付金额
     approved_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "approved")
-    if current_user.role != "admin":
+    if not can_view_all:
         approved_query = approved_query.where(Reimbursement.created_by == current_user.id)
     if year:
         approved_query = approved_query.where(extract('year', Reimbursement.created_at) == year)
@@ -180,7 +312,7 @@ async def get_reimbursement_statistics(
 
     # 已支付金额
     paid_query = select(func.sum(Reimbursement.total_amount), func.count()).where(Reimbursement.status == "paid")
-    if current_user.role != "admin":
+    if not can_view_all:
         paid_query = paid_query.where(Reimbursement.created_by == current_user.id)
     if year:
         paid_query = paid_query.where(extract('year', Reimbursement.created_at) == year)
@@ -189,14 +321,15 @@ async def get_reimbursement_statistics(
 
     # 按分类统计（已支付）
     category_query = select(Reimbursement.expense_category, func.sum(Reimbursement.total_amount)).where(Reimbursement.status == "paid").group_by(Reimbursement.expense_category)
-    if current_user.role != "admin":
+    if not can_view_all:
         category_query = category_query.where(Reimbursement.created_by == current_user.id)
     if year:
         category_query = category_query.where(extract('year', Reimbursement.created_at) == year)
     category_result = await db.execute(category_query)
+    categories = await _get_expense_categories(db)
     by_category = {}
     for cat, amt in category_result.all():
-        label = _get_category_label(cat)
+        label = _get_category_label(cat, categories)
         by_category[label] = {"amount": Decimal(str(amt or 0))}
 
     return ReimbursementStatistics(
@@ -207,6 +340,152 @@ async def get_reimbursement_statistics(
         approved_count=approved_count or 0,
         paid_count=paid_count or 0,
         by_category=by_category,
+    )
+
+
+@router.get("/payer-companies/list", response_model=dict)
+async def get_payer_companies(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取支付方公司名称列表（来源：系统设置 → 报销设置）"""
+    companies = await _get_payer_companies(db)
+    return {"items": companies}
+
+
+@router.get("/expense-categories/list", response_model=dict)
+async def get_expense_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取费用分类列表（来源：系统设置 → 报销设置）"""
+    categories = await _get_expense_categories(db)
+    return {"items": categories}
+
+
+@router.post("/expense-categories/migrate", response_model=dict)
+async def migrate_expense_category(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission("reimbursements")),
+):
+    """把已有报销单的 expense_category 从旧值改成新值（用于分类标识变更后修复历史数据）"""
+    old_value = (payload.get("old_value") or "").strip()
+    new_value = (payload.get("new_value") or "").strip()
+    if not old_value or not new_value:
+        raise HTTPException(status_code=400, detail="old_value 和 new_value 都不能为空")
+    if old_value == new_value:
+        return {"message": "新旧值相同，无需迁移", "updated": 0}
+
+    result = await db.execute(
+        select(Reimbursement).where(Reimbursement.expense_category == old_value)
+    )
+    reimbursements = result.scalars().all()
+    for r in reimbursements:
+        r.expense_category = new_value
+    await db.commit()
+    return {"message": "迁移成功", "updated": len(reimbursements)}
+
+
+@router.post("/export-batch-payment")
+async def export_batch_payment(
+    ids: List[str] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """导出选中报销单为银行批量支付 Excel 格式"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要导出的报销单")
+
+    result = await db.execute(
+        select(Reimbursement).where(Reimbursement.id.in_(ids))
+    )
+    reimbursements = result.scalars().all()
+
+    if not reimbursements:
+        raise HTTPException(status_code=404, detail="未找到选中的报销单")
+
+    company_name = await _get_setting_value(db, SettingKeys.COMPANY_NAME) or ""
+    company_bank_name = await _get_setting_value(db, SettingKeys.COMPANY_BANK_NAME) or ""
+    company_bank_account = await _get_setting_value(db, SettingKeys.COMPANY_BANK_ACCOUNT) or ""
+
+    # 预加载收款方信息：收集所有涉及的供应商名称 + 公司自身（作为付款方也查一下）
+    supplier_names = list({r.supplier_name for r in reimbursements if r.supplier_name})
+    if company_name:
+        supplier_names.append(company_name)
+    supplier_map = {}
+    if supplier_names:
+        result = await db.execute(
+            select(Supplier).where(Supplier.name.in_(supplier_names))
+        )
+        for s in result.scalars().all():
+            supplier_map[s.name] = s
+
+    # 付款方信息：优先从收款方表（公司自身）获取，其次用设置
+    payer = supplier_map.get(company_name)
+    payer_bank_name = (payer.bank_name if payer else "") or company_bank_name
+    payer_bank_account = (payer.bank_account if payer else "") or company_bank_account
+    payer_name = company_name
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "批量支付"
+
+    headers = [
+        "币种", "日期", "明细标志", "顺序号",
+        "付款账号开户行", "付款账号/卡号", "付款账号名称/卡名称",
+        "收款账号开户行", "收款账号省份", "收款账号地市", "收款账号地区码",
+        "收款账号", "收款账号名称", "金额",
+        "汇款用途", "备注信息", "汇款方式",
+        "收款账户短信通知手机号码", "自定义序号",
+    ]
+    ws.append(headers)
+
+    today_str = date.today().strftime("%Y%m%d")
+
+    for idx, r in enumerate(reimbursements, 1):
+        s = supplier_map.get(r.supplier_name) if r.supplier_name else None
+
+        bank_name = r.supplier_bank_name or (s.bank_name if s else "") or ""
+        bank_branch = r.supplier_bank_branch or (s.bank_branch if s else "") or ""
+        bank_province = r.supplier_bank_province or (s.bank_province if s else "") or ""
+        bank_city = r.supplier_bank_city or (s.city if s else "") or ""
+        bank_account = r.supplier_bank_account or (s.bank_account if s else "") or ""
+
+        supplier_bank_full = " ".join(filter(None, [bank_name, bank_branch]))
+        expense_label = REIMBURSEMENT_CATEGORY_LABELS.get(r.expense_category, r.expense_category or "")
+        ws.append([
+            "RMB",
+            today_str,
+            "",
+            idx,
+            payer_bank_name,
+            payer_bank_account,
+            payer_name,
+            supplier_bank_full,
+            bank_province,
+            bank_city,
+            bank_account[:4],
+            bank_account,
+            r.supplier_name or "",
+            float(r.total_amount or 0),
+            expense_label,
+            r.remark or "",
+            "0",
+            "",
+            idx,
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"批量支付_{today_str}.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
 
 
@@ -224,10 +503,10 @@ async def get_reimbursement(
         raise HTTPException(status_code=404, detail="报销单不存在")
 
     # 权限检查：非管理员只能看自己的
-    if current_user.role != "admin" and reimbursement.created_by != current_user.id:
+    if not await _can_view_all_reimbursements(db, current_user) and reimbursement.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权限查看此报销单")
 
-    return await _enrich_reimbursement_response(db, reimbursement)
+    return await _enrich_reimbursement_response(db, reimbursement, current_user)
 
 
 @router.post("", response_model=ReimbursementResponse)
@@ -253,6 +532,16 @@ async def create_reimbursement(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="合同不存在")
 
+    # 报销种类业务规则
+    kind = reimbursement.reimbursement_kind or REIMBURSEMENT_KIND_INVOICE_COMPANY
+    if kind == REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL:
+        # 出差津贴：无税，分类强制差旅
+        reimbursement.tax_amount = Decimal("0")
+        reimbursement.total_amount = reimbursement.amount
+        reimbursement.expense_category = "travel"
+        # 津贴无需税号
+        reimbursement.supplier_tax_id = None
+
     # 创建报销单
     db_reimbursement = Reimbursement(
         **reimbursement.model_dump(),
@@ -263,7 +552,7 @@ async def create_reimbursement(
     await db.commit()
     await db.refresh(db_reimbursement)
 
-    return await _enrich_reimbursement_response(db, db_reimbursement)
+    return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
 
 @router.put("/{reimbursement_id}", response_model=ReimbursementResponse)
@@ -297,6 +586,17 @@ async def update_reimbursement(
     for field, value in update_data.items():
         setattr(db_reimbursement, field, value)
 
+    # 报销种类业务规则：津贴场景强制非税、分类为差旅、税号清空
+    effective_kind = update_data.get("reimbursement_kind", None) or db_reimbursement.reimbursement_kind
+    if effective_kind == REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL:
+        if "amount" in update_data or "tax_amount" in update_data or "total_amount" in update_data:
+            db_reimbursement.tax_amount = Decimal("0")
+            db_reimbursement.total_amount = db_reimbursement.amount or Decimal("0")
+        if "expense_category" not in update_data:
+            db_reimbursement.expense_category = "travel"
+        if "supplier_tax_id" not in update_data:
+            db_reimbursement.supplier_tax_id = None
+
     # 驳回状态编辑后自动重置为草稿
     if db_reimbursement.status == "rejected":
         db_reimbursement.status = "draft"
@@ -305,7 +605,7 @@ async def update_reimbursement(
     await db.commit()
     await db.refresh(db_reimbursement)
 
-    return await _enrich_reimbursement_response(db, db_reimbursement)
+    return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
 
 @router.delete("/{reimbursement_id}")
@@ -375,8 +675,8 @@ async def approve_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """审核通过报销单"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_approve_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认审核人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()
@@ -414,8 +714,8 @@ async def reject_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """驳回报销单"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_approve_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认审核人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()
@@ -445,8 +745,8 @@ async def pay_reimbursement(
     current_user: User = Depends(require_menu_permission("reimbursements")),
 ):
     """确认支付"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    if not await _can_pay_reimbursements(db, current_user):
+        raise HTTPException(status_code=403, detail="需要管理员或默认支付确认人权限")
 
     result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
     db_reimbursement = result.scalar_one_or_none()
@@ -461,6 +761,30 @@ async def pay_reimbursement(
     db_reimbursement.status = "paid"
     db_reimbursement.paid_by = current_user.id
     db_reimbursement.paid_at = datetime.now()
+
+    # 自动创建支出记录（避免重复）
+    existing = await db.execute(
+        select(Expense).where(Expense.reimbursement_id == reimbursement_id)
+    )
+    if not existing.scalar_one_or_none():
+        paid_date = db_reimbursement.paid_at.date()
+        expense = Expense(
+            reimbursement_id=reimbursement_id,
+            source_type="reimbursement",
+            supplier_name=db_reimbursement.supplier_name,
+            invoice_id=db_reimbursement.invoice_id,
+            contract_id=db_reimbursement.contract_id,
+            amount=db_reimbursement.amount,
+            tax_amount=db_reimbursement.tax_amount,
+            total_amount=db_reimbursement.total_amount,
+            expense_date=paid_date,
+            expense_year=str(paid_date.year),
+            expense_category=db_reimbursement.expense_category,
+            file_id=db_reimbursement.file_id,
+            file_url=db_reimbursement.file_url,
+            remark=db_reimbursement.remark,
+        )
+        db.add(expense)
 
     await db.commit()
     await db.refresh(db_reimbursement)
@@ -665,37 +989,58 @@ async def confirm_ai_reimbursement_import(
                 name=reimbursement_data.supplier_name,
                 tax_id=reimbursement_data.supplier_tax_id,
                 bank_name=reimbursement_data.supplier_bank_name,
+                bank_branch=reimbursement_data.supplier_bank_branch,
+                bank_province=reimbursement_data.supplier_bank_province,
                 bank_account=reimbursement_data.supplier_bank_account,
+                bank_code=reimbursement_data.supplier_bank_code,
                 remark=f"AI录入报销单自动创建",
             )
             db.add(new_supplier)
 
-    # 创建进项发票记录
+    # 创建或复用进项发票记录
     invoice_no = reimbursement_data.invoice_no
     if not invoice_no and reimbursement_data.invoice_code and reimbursement_data.invoice_number:
         invoice_no = f"{reimbursement_data.invoice_code}-{reimbursement_data.invoice_number}"
 
-    db_invoice = Invoice(
-        invoice_code=reimbursement_data.invoice_code,
-        invoice_number=reimbursement_data.invoice_number,
-        invoice_no=invoice_no,
-        invoice_date=reimbursement_data.issue_date,
-        issue_date=reimbursement_data.issue_date,
-        amount=reimbursement_data.amount,
-        tax_amount=reimbursement_data.tax_amount,
-        total_amount=reimbursement_data.total_amount,
-        invoice_type="purchase",  # 进项发票
-        seller_name=reimbursement_data.supplier_name,  # 销售方是供应商
-        seller_tax_id=reimbursement_data.supplier_tax_id,
-        status="normal",  # 已收到发票
-        file_id=reimbursement_data.file_id,
-        file_url=reimbursement_data.file_url,
-        ai_parsed=True,
-        parse_confidence=reimbursement_data.parse_confidence,
-        remark=reimbursement_data.remark,
-    )
-    db.add(db_invoice)
-    await db.flush()  # 获取发票ID
+    db_invoice = None
+    invoice_reused = False
+    if invoice_no:
+        existing_inv = await db.execute(
+            select(Invoice).where(Invoice.invoice_no == invoice_no)
+        )
+        db_invoice = existing_inv.scalar_one_or_none()
+        if db_invoice:
+            invoice_reused = True
+            if reimbursement_data.file_id:
+                db_invoice.file_id = reimbursement_data.file_id
+                db_invoice.file_url = reimbursement_data.file_url
+            if reimbursement_data.remark:
+                db_invoice.remark = reimbursement_data.remark
+
+    if not db_invoice:
+        db_invoice = Invoice(
+            invoice_code=reimbursement_data.invoice_code,
+            invoice_number=reimbursement_data.invoice_number,
+            invoice_no=invoice_no,
+            invoice_date=reimbursement_data.issue_date,
+            issue_date=reimbursement_data.issue_date,
+            amount=reimbursement_data.amount,
+            tax_amount=reimbursement_data.tax_amount,
+            total_amount=reimbursement_data.total_amount,
+            invoice_type="purchase",
+            buyer_name=await _get_setting_value(db, SettingKeys.COMPANY_NAME),
+            buyer_tax_id=await _get_setting_value(db, SettingKeys.COMPANY_TAX_ID),
+            seller_name=reimbursement_data.supplier_name,
+            seller_tax_id=reimbursement_data.supplier_tax_id,
+            status="normal",
+            file_id=reimbursement_data.file_id,
+            file_url=reimbursement_data.file_url,
+            ai_parsed=True,
+            parse_confidence=reimbursement_data.parse_confidence,
+            remark=reimbursement_data.remark,
+        )
+        db.add(db_invoice)
+        await db.flush()
 
     # 创建报销单，关联发票
     db_reimbursement = Reimbursement(
@@ -703,11 +1048,16 @@ async def confirm_ai_reimbursement_import(
         supplier_name=reimbursement_data.supplier_name,
         supplier_tax_id=reimbursement_data.supplier_tax_id,
         supplier_bank_name=reimbursement_data.supplier_bank_name,
+        supplier_bank_branch=reimbursement_data.supplier_bank_branch,
+        supplier_bank_province=reimbursement_data.supplier_bank_province,
+        supplier_bank_city=reimbursement_data.supplier_bank_city,
+        supplier_bank_code=reimbursement_data.supplier_bank_code,
         supplier_bank_account=reimbursement_data.supplier_bank_account,
         amount=reimbursement_data.amount,
         tax_amount=reimbursement_data.tax_amount,
         total_amount=reimbursement_data.total_amount,
         expense_category=reimbursement_data.expense_category,
+        payer_company=reimbursement_data.payer_company,
         remark=reimbursement_data.remark,
         file_id=reimbursement_data.file_id,
         file_url=reimbursement_data.file_url,
@@ -726,4 +1076,5 @@ async def confirm_ai_reimbursement_import(
         "reimbursement_id": db_reimbursement.id,
         "invoice_id": db_invoice.id,
         "supplier_created": payload.create_supplier,
+        "invoice_reused": invoice_reused,
     }

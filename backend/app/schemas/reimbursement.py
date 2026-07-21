@@ -36,6 +36,18 @@ class ReimbursementCategory(str, Enum):
     OTHER = "other"
 
 
+# 报销种类
+REIMBURSEMENT_KIND_INVOICE_COMPANY = "invoice_company"
+REIMBURSEMENT_KIND_INVOICE_PERSONAL = "invoice_personal"
+REIMBURSEMENT_KIND_ALLOWANCE_TRAVEL = "allowance_travel"
+
+REIMBURSEMENT_KIND_LABELS = {
+    "invoice_company": "发票·公司直付",
+    "invoice_personal": "发票·个人垫付",
+    "allowance_travel": "出差津贴",
+}
+
+
 # 费用分类中文映射
 REIMBURSEMENT_CATEGORY_LABELS = {
     "catering": "餐饮",
@@ -72,14 +84,23 @@ class ReimbursementBase(BaseModel):
     supplier_name: str = Field(..., description="供应商/收款方名称")
     supplier_tax_id: Optional[str] = Field(None, description="收款方税号")
     supplier_bank_name: Optional[str] = Field(None, description="开户行")
+    supplier_bank_branch: Optional[str] = Field(None, description="支行名称")
+    supplier_bank_province: Optional[str] = Field(None, description="开户行省份")
+    supplier_bank_city: Optional[str] = Field(None, description="开户行城市")
+    supplier_bank_code: Optional[str] = Field(None, description="联行号")
     supplier_bank_account: Optional[str] = Field(None, description="银行账号")
     amount: Decimal = Field(..., ge=0, description="报销金额不含税")
     tax_amount: Optional[Decimal] = Field(Decimal("0"), description="税额")
     total_amount: Decimal = Field(..., ge=0, description="价税合计")
-    expense_category: Optional[ReimbursementCategory] = Field(ReimbursementCategory.OTHER, description="费用分类")
+    expense_category: Optional[str] = Field("other", description="费用分类")
+    payer_company: Optional[str] = Field(None, description="支付方公司名称")
     remark: Optional[str] = Field(None, description="备注说明")
     file_id: Optional[str] = Field(None, description="附件文件ID")
     file_url: Optional[str] = Field(None, description="附件文件URL")
+    reimbursement_kind: Optional[str] = Field(REIMBURSEMENT_KIND_INVOICE_COMPANY, description="报销种类")
+    travel_start_date: Optional[date] = Field(None, description="出差开始日期(津贴)")
+    travel_end_date: Optional[date] = Field(None, description="出差结束日期(津贴)")
+    travel_destination: Optional[str] = Field(None, description="出差地点(津贴)")
 
 
 class ReimbursementCreate(ReimbursementBase):
@@ -90,14 +111,23 @@ class ReimbursementUpdate(BaseModel):
     supplier_name: Optional[str] = None
     supplier_tax_id: Optional[str] = None
     supplier_bank_name: Optional[str] = None
+    supplier_bank_branch: Optional[str] = None
+    supplier_bank_province: Optional[str] = None
+    supplier_bank_city: Optional[str] = None
+    supplier_bank_code: Optional[str] = None
     supplier_bank_account: Optional[str] = None
     amount: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
     total_amount: Optional[Decimal] = None
-    expense_category: Optional[ReimbursementCategory] = None
+    expense_category: Optional[str] = None
+    payer_company: Optional[str] = None
     remark: Optional[str] = None
     file_id: Optional[str] = None
     file_url: Optional[str] = None
+    reimbursement_kind: Optional[str] = None
+    travel_start_date: Optional[date] = None
+    travel_end_date: Optional[date] = None
+    travel_destination: Optional[str] = None
 
 
 class ReimbursementReject(BaseModel):
@@ -106,7 +136,7 @@ class ReimbursementReject(BaseModel):
 
 class ReimbursementApprove(BaseModel):
     amount: Optional[Decimal] = Field(None, description="修改后的金额")
-    expense_category: Optional[ReimbursementCategory] = Field(None, description="修改后的分类")
+    expense_category: Optional[str] = Field(None, description="修改后的分类")
 
 
 class ReimbursementResponse(ReimbursementBase):
@@ -121,6 +151,8 @@ class ReimbursementResponse(ReimbursementBase):
     paid_by: Optional[str] = None
     payer_name: Optional[str] = None
     paid_at: Optional[datetime] = None
+    can_approve: bool = False
+    can_pay: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -152,11 +184,16 @@ class AiReimbursementDraft(BaseModel):
     supplier_name: Optional[str] = None
     supplier_tax_id: Optional[str] = None
     supplier_bank_name: Optional[str] = None
+    supplier_bank_branch: Optional[str] = None
+    supplier_bank_province: Optional[str] = None
+    supplier_bank_city: Optional[str] = None
+    supplier_bank_code: Optional[str] = None
     supplier_bank_account: Optional[str] = None
     amount: Decimal = Decimal("0")
     tax_amount: Decimal = Decimal("0")
     total_amount: Decimal = Decimal("0")
     expense_category: str = "other"
+    payer_company: Optional[str] = None
     issue_date: Optional[date] = None
     remark: Optional[str] = None
     file_id: Optional[str] = None

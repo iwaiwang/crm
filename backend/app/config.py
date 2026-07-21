@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """应用配置"""
 
     # 应用基础配置
-    APP_NAME: str = "小微企业 CRM 系统"
+    APP_NAME: str = "Pyxis管理系统"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 
@@ -35,6 +35,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
         "http://127.0.0.1:3000",
     ]
+
+    # 公司信息（用于发票方向识别等）
+    COMPANY_NAME: Optional[str] = None
+    COMPANY_TAX_ID: Optional[str] = None
 
     # Webhook API Key (OpenClaw 调用时使用)
     WEBHOOK_API_KEY: Optional[str] = None

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="304 206 429 617" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">PYXIS Technology Logo</title>
+  <desc id="desc">A minimalist Pyxis constellation technology logo on a dark blue background.</desc>
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#101A33"/>
+      <stop offset="55%" stop-color="#081226"/>
+      <stop offset="100%" stop-color="#050B19"/>
+    </radialGradient>
+    <linearGradient id="silver" x1="360" y1="230" x2="690" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6EA2FF"/>
+      <stop offset="18%" stop-color="#2E6FDF"/>
+      <stop offset="46%" stop-color="#163F9E"/>
+      <stop offset="74%" stop-color="#3F78E8"/>
+      <stop offset="100%" stop-color="#214FAF"/>
+    </linearGradient>
+    <linearGradient id="orbitSilver" x1="350" y1="485" x2="690" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#163F9E"/>
+      <stop offset="35%" stop-color="#2E6FDF"/>
+      <stop offset="65%" stop-color="#0F2F79"/>
+      <stop offset="100%" stop-color="#6EA2FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="3" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+
+
+  <!-- Constellation mark -->
+  <g id="pyxis-constellation-mark" filter="url(#softShadow)">
+    <!-- orbital sweep behind nodes -->
+    <path d="M365 461
+             C452 485 566 463 639 421
+             C713 379 706 300 645 260
+             C612 238 579 233 552 238
+             C596 231 652 237 691 279
+             C741 334 715 401 653 445
+             C570 504 458 508 365 461Z"
+          fill="url(#orbitSilver)" opacity="0.88"/>
+
+    <!-- constellation links -->
+    <g id="links" fill="none" stroke="url(#silver)" stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M377 428 L488 282" stroke-width="12"/>
+      <path d="M516 284 L499 517" stroke-width="11"/>
+      <path d="M541 287 L629 397" stroke-width="7"/>
+      <path d="M374 461 L457 532" stroke-width="8"/>
+      <path d="M528 533 L619 444" stroke-width="8"/>
+      <path d="M372 457 L498 455" stroke-width="8" opacity="0.9"/>
+    </g>
+
+    <!-- nodes -->
+    <g id="nodes" fill="#214FAF">
+      <circle cx="512" cy="250" r="29"/>
+      <circle cx="349" cy="447" r="30"/>
+      <circle cx="503" cy="559" r="30"/>
+      <circle cx="634" cy="419" r="25"/>
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <g id="wordmark" filter="url(#textShadow)" fill="#214FAF" text-anchor="middle">
+    <text x="512" y="748"
+          font-family="Avenir Next, Montserrat, Helvetica Neue, Arial, sans-serif"
+          font-size="104"
+          font-weight="400"
+          letter-spacing="26">PYXIS</text>
+    <text x="512" y="807"
+          font-family="Avenir Next, Montserrat, Helvetica Neue, Arial, sans-serif"
+          font-size="34"
+          font-weight="300"
+          letter-spacing="13">TECHNOLOGY</text>
+  </g>
+</svg>

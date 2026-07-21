@@ -33,6 +33,8 @@ class Expense(Base):
     supplier_name = Column(String(100), comment="供应商/收款方名称")
     invoice_id = Column(String(36), ForeignKey("invoices.id"), comment="关联的进项发票 ID（可选）")
     contract_id = Column(String(36), ForeignKey("contracts.id"), comment="关联合同 ID（可选）")
+    reimbursement_id = Column(String(36), ForeignKey("reimbursements.id"), nullable=True, comment="关联报销单 ID（报销支付后自动生成）")
+    source_type = Column(String(20), default="manual", comment="来源类型：manual=手动创建, reimbursement=报销支付生成")
     amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="支出金额（不含税）")
     tax_amount = Column(DECIMAL(15, 2), default=0, comment="税额")
     total_amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="价税合计")

@@ -41,7 +41,6 @@
 
     <!-- 客户列表 -->
     <el-card class="table-card">
-      <!-- 统计信息 -->
       <div class="statistics-bar" v-if="selectedItems.length > 0">
         <el-tag type="primary" size="large">已选择 {{ selectedItems.length }} 项</el-tag>
         <el-button link type="primary" @click="clearSelection">清除选择</el-button>
@@ -51,9 +50,26 @@
       <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="客户名称" min-width="150" />
-        <el-table-column prop="contact" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="120" />
-        <el-table-column prop="email" label="邮箱" width="180" />
+        <el-table-column label="联系人" min-width="180">
+          <template #default="{ row }">
+            <div v-if="row.contacts && row.contacts.length > 0">
+              <div v-for="c in row.contacts" :key="c.id" class="contact-line">
+                <span>{{ c.name }}</span>
+                <el-tag v-if="c.is_primary" size="small" type="primary" effect="plain">主要</el-tag>
+                <span v-if="c.position" class="contact-position">{{ c.position }}</span>
+              </div>
+            </div>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="电话" width="130">
+          <template #default="{ row }">
+            <div v-if="row.contacts && row.contacts.length > 0">
+              <div v-for="c in row.contacts" :key="c.id">{{ c.phone || '-' }}</div>
+            </div>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="分类" width="80">
           <template #default="{ row }">
             <el-tag :type="getCategoryType(row.category)">
@@ -76,7 +92,6 @@
         </el-table-column>
       </el-table>
 
-      <!-- 分页 -->
       <div class="pagination">
         <el-pagination
           v-model:current-page="pagination.page"
@@ -94,21 +109,12 @@
     <el-drawer
       v-model="showDialog"
       :title="formData.id ? '编辑客户' : '新增客户'"
-      size="520px"
+      size="600px"
       direction="rtl"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="客户名称" prop="name">
           <el-input v-model="formData.name" />
-        </el-form-item>
-        <el-form-item label="联系人" prop="contact">
-          <el-input v-model="formData.contact" />
-        </el-form-item>
-        <el-form-item label="联系电话" prop="phone">
-          <el-input v-model="formData.phone" />
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="formData.email" />
         </el-form-item>
         <el-form-item label="地址" prop="address">
           <el-input v-model="formData.address" type="textarea" :rows="2" />
@@ -127,6 +133,48 @@
             <el-radio label="lost">流失</el-radio>
           </el-radio-group>
         </el-form-item>
+
+        <!-- 联系人列表 -->
+        <el-divider content-position="left">联系人</el-divider>
+        <div v-for="(contact, index) in formData.contacts" :key="index" class="contact-card">
+          <div class="contact-header">
+            <span>联系人 {{ index + 1 }}</span>
+            <el-button link type="danger" size="small" @click="removeContact(index)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="姓名" :prop="`contacts.${index}.name`" label-width="50px"
+                :rules="{ required: true, message: '请输入姓名', trigger: 'blur' }">
+                <el-input v-model="contact.name" size="small" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="职位" :prop="`contacts.${index}.position`" label-width="50px">
+                <el-input v-model="contact.position" size="small" placeholder="如：销售经理" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="电话" :prop="`contacts.${index}.phone`" label-width="50px">
+                <el-input v-model="contact.phone" size="small" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="邮箱" :prop="`contacts.${index}.email`" label-width="50px">
+                <el-input v-model="contact.email" size="small" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-checkbox v-model="contact.is_primary" size="small">设为主要联系人</el-checkbox>
+        </div>
+        <el-button type="primary" link @click="addContact">
+          <el-icon><Plus /></el-icon> 添加联系人
+        </el-button>
+
+        <el-divider content-position="left">其他信息</el-divider>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="formData.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -163,20 +211,36 @@ const pagination = reactive({
   total: 0,
 })
 
+const emptyContact = () => ({
+  id: '',
+  name: '',
+  phone: '',
+  email: '',
+  position: '',
+  is_primary: false,
+  remark: '',
+})
+
 const formData = reactive({
   id: '',
   name: '',
-  contact: '',
-  phone: '',
-  email: '',
   address: '',
   category: 'normal',
   status: 'active',
   remark: '',
+  contacts: [],
 })
 
 const rules = {
   name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
+}
+
+const addContact = () => {
+  formData.contacts.push(emptyContact())
+}
+
+const removeContact = (index) => {
+  formData.contacts.splice(index, 1)
 }
 
 const loadCustomers = async () => {
@@ -211,23 +275,31 @@ const handleReset = () => {
 
 const openAddDialog = () => {
   showDialog.value = true
-  // 使用 Object.assign 重置 formData，保持响应性
   Object.assign(formData, {
     id: '',
     name: '',
-    contact: '',
-    phone: '',
-    email: '',
     address: '',
     category: 'normal',
     status: 'active',
     remark: '',
+    contacts: [emptyContact()],
   })
 }
 
 const handleEdit = (row) => {
   showDialog.value = true
-  Object.assign(formData, row)
+  const contacts = (row.contacts && row.contacts.length > 0)
+    ? row.contacts.map(c => ({ ...c }))
+    : [emptyContact()]
+  Object.assign(formData, {
+    id: row.id,
+    name: row.name,
+    address: row.address,
+    category: row.category,
+    status: row.status,
+    remark: row.remark,
+    contacts,
+  })
 }
 
 const handleDelete = async (row) => {
@@ -272,15 +344,61 @@ const handleBatchDelete = async () => {
 const handleSubmit = async () => {
   if (!formRef.value) return
 
+  // 校验联系人姓名
+  if (formData.contacts.length === 0) {
+    ElMessage.warning('请至少添加一个联系人')
+    return
+  }
+  for (const c of formData.contacts) {
+    if (!c.name || !c.name.trim()) {
+      ElMessage.warning('请填写所有联系人姓名')
+      return
+    }
+  }
+
   await formRef.value.validate(async (valid) => {
     if (valid) {
       submitting.value = true
       try {
+        const payload = {
+          name: formData.name,
+          address: formData.address,
+          category: formData.category,
+          status: formData.status,
+          remark: formData.remark,
+          contacts: formData.contacts.map(c => ({
+            name: c.name,
+            phone: c.phone || null,
+            email: c.email || null,
+            position: c.position || null,
+            is_primary: c.is_primary || false,
+            remark: c.remark || null,
+          })),
+        }
+
         if (formData.id) {
-          await updateCustomer(formData.id, formData)
+          // 更新客户基本信息 + 同步联系人
+          await updateCustomer(formData.id, {
+            name: payload.name,
+            address: payload.address,
+            category: payload.category,
+            status: payload.status,
+            remark: payload.remark,
+          })
+
+          // 删除旧联系人，重新创建
+          const { getContacts, deleteContact, createContact } = await import('@/api/customer')
+          const existingContacts = await getContacts(formData.id)
+          for (const c of existingContacts) {
+            await deleteContact(formData.id, c.id)
+          }
+          for (const c of payload.contacts) {
+            await createContact(formData.id, c)
+          }
+
           ElMessage.success('更新成功')
         } else {
-          await createCustomer(formData)
+          await createCustomer(payload)
           ElMessage.success('创建成功')
         }
         showDialog.value = false
@@ -354,5 +472,38 @@ onMounted(() => {
   border-radius: 6px;
   margin-bottom: 16px;
   border: 1px solid #bae6ff;
+}
+
+.contact-card {
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.contact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.contact-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.contact-position {
+  font-size: 12px;
+  color: #999;
+}
+
+.text-muted {
+  color: #ccc;
 }
 </style>

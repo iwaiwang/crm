@@ -68,6 +68,7 @@ class InvoiceUpdate(BaseModel):
     tax_amount: Optional[Decimal] = None
     total_amount: Optional[Decimal] = None
     type: Optional[InvoiceType] = None
+    invoice_type: Optional[InvoiceDirectionType] = None
     buyer_name: Optional[str] = Field(None, max_length=200)
     buyer_tax_id: Optional[str] = Field(None, max_length=50)
     seller_name: Optional[str] = Field(None, max_length=200)

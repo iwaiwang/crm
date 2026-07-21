@@ -16,7 +16,7 @@
             拖拽文件到此处 或 <span class="upload-link">点击上传</span>
           </div>
           <div class="upload-hint">
-            支持格式：{{ acceptTypes.replace(/\./g, '').toUpperCase() }} (最大 10MB)
+            支持格式：{{ acceptTypes.replace(/\./g, '').toUpperCase() }} (最大 50MB)
           </div>
         </div>
       </el-upload>
@@ -151,7 +151,7 @@ const isPdf = computed(() => {
 })
 
 const isImageFile = computed(() => {
-  return fileInfo.value && ['jpg', 'jpeg', 'png'].includes(fileInfo.value.type)
+  return fileInfo.value && ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileInfo.value.type)
 })
 
 const previewUrl = computed(() => {
@@ -165,9 +165,13 @@ const previewUrl = computed(() => {
 
 // 处理文件变化
 const handleFileChange = async (file) => {
+  const fileList = uploadRef.value?.uploadFiles || []
+  const fileIndex = fileList.indexOf(file)
+
   // 验证文件大小
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.error('文件大小超过 10MB 限制')
+  if (file.size > 50 * 1024 * 1024) {
+    ElMessage.error('文件大小超过 50MB 限制')
+    if (fileIndex >= 0) uploadRef.value?.handleRemove(file)
     return
   }
 
@@ -187,6 +191,8 @@ const handleFileChange = async (file) => {
   } catch (error) {
     console.error('上传失败:', error)
     ElMessage.error(error.response?.data?.detail || '上传失败')
+    // 上传失败时清除文件列表，避免用户误以为上传成功
+    if (fileIndex >= 0) uploadRef.value?.handleRemove(file)
   }
 }
 
@@ -334,6 +340,8 @@ const handleRemove = () => {
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
+  if (!Number.isFinite(Number(bytes)) || Number(bytes) <= 0) return '未知大小'
+  bytes = Number(bytes)
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'

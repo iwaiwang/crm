@@ -33,8 +33,10 @@ def _get_upload_directory() -> str:
 # 预定义设置项的默认值
 DEFAULT_SETTINGS = {
     SettingKeys.COMPANY_NAME: {"value": "", "value_type": "string", "description": "公司名称", "is_public": True},
+    SettingKeys.COMPANY_LOGO_URL: {"value": "", "value_type": "string", "description": "公司 Logo URL", "is_public": True},
     SettingKeys.COMPANY_TAX_ID: {"value": "", "value_type": "string", "description": "公司税号", "is_public": True},
     SettingKeys.COMPANY_BANK_ACCOUNT: {"value": "", "value_type": "string", "description": "公司银行账号", "is_public": True},
+    SettingKeys.COMPANY_BANK_NAME: {"value": "", "value_type": "string", "description": "公司开户行", "is_public": True},
     SettingKeys.COMPANY_ADDRESS: {"value": "", "value_type": "string", "description": "公司地址", "is_public": True},
     SettingKeys.COMPANY_PHONE: {"value": "", "value_type": "string", "description": "公司电话", "is_public": True},
     SettingKeys.COMPANY_EMAIL: {"value": "", "value_type": "string", "description": "公司邮箱", "is_public": True},
@@ -42,6 +44,30 @@ DEFAULT_SETTINGS = {
     SettingKeys.UPLOAD_DIRECTORY: {"value": _get_upload_directory(), "value_type": "string", "description": "文件上传目录", "is_public": False},
     SettingKeys.OCR_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 OCR 功能", "is_public": False},
     SettingKeys.AI_ENABLED: {"value": "true", "value_type": "boolean", "description": "是否启用 AI 功能", "is_public": False},
+    SettingKeys.REIMBURSEMENT_DEFAULT_APPROVER_ID: {"value": "", "value_type": "string", "description": "默认报销审核人", "is_public": False},
+    SettingKeys.REIMBURSEMENT_DEFAULT_PAYER_ID: {"value": "", "value_type": "string", "description": "默认报销支付确认人", "is_public": False},
+    SettingKeys.REIMBURSEMENT_PAYER_COMPANIES: {"value": "[]", "value_type": "json", "description": "报销支付方公司名称列表", "is_public": True},
+    SettingKeys.REIMBURSEMENT_EXPENSE_CATEGORIES: {
+        "value": json.dumps([
+            {"value": "catering", "label": "餐饮"},
+            {"value": "travel", "label": "差旅"},
+            {"value": "procurement", "label": "采购"},
+            {"value": "office", "label": "办公"},
+            {"value": "rent", "label": "房租"},
+            {"value": "utilities", "label": "水电"},
+            {"value": "salary", "label": "工资"},
+            {"value": "marketing", "label": "市场推广"},
+            {"value": "software", "label": "软件服务"},
+            {"value": "maintenance", "label": "维修维护"},
+            {"value": "training", "label": "培训"},
+            {"value": "entertainment", "label": "业务招待"},
+            {"value": "logistics", "label": "物流快递"},
+            {"value": "other", "label": "其他"},
+        ]),
+        "value_type": "json",
+        "description": "报销费用分类列表",
+        "is_public": True,
+    },
 }
 
 
@@ -192,6 +218,7 @@ async def get_company_info(db: AsyncSession = Depends(get_db)):
             Setting.key.in_(
                 [
                     SettingKeys.COMPANY_NAME,
+                    SettingKeys.COMPANY_LOGO_URL,
                     SettingKeys.COMPANY_TAX_ID,
                     SettingKeys.COMPANY_BANK_ACCOUNT,
                     SettingKeys.COMPANY_ADDRESS,

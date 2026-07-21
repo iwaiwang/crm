@@ -693,7 +693,14 @@ const runPreview = async () => {
 const handleFileChange = async (file) => {
   fileInfo.value = file
   if (!file) {
-    resetState()
+    previewLoading.value = false
+    previewReady.value = false
+    summaryActions.value = []
+    Object.assign(form, {
+      file_id: '',
+      file_url: '',
+      parse_confidence: null,
+    })
     return
   }
   form.file_id = file.id

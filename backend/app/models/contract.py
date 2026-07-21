@@ -26,6 +26,7 @@ class Contract(Base):
     name = Column(String(200), nullable=False, comment="Contract name")
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False, comment="Customer ID")
     amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="Contract amount")
+    sign_date = Column(Date, comment="Sign date")
     start_date = Column(Date, comment="Start date")
     end_date = Column(Date, comment="End date")
     status = Column(

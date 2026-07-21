@@ -31,6 +31,11 @@ class Project(Base):
     bid_result = Column(String(50), comment="中标结果")
     competitor = Column(String(200), comment="竞争对手")
 
+    # 销售管道字段
+    probability = Column(Integer, default=0, comment="中标概率 0-100")
+    expected_sign_date = Column(Date, comment="预计签单日期")
+    last_followup_at = Column(DateTime(timezone=True), comment="最后跟进时间")
+
     # 其他
     remark = Column(Text, comment="备注")
     created_at = Column(DateTime(timezone=True), server_default=func.now())

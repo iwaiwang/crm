@@ -69,3 +69,8 @@ export function updateTask(projectId, taskId, data) {
 export function batchDeleteProjects(ids) {
   return request.post('/projects/batch-delete', ids)
 }
+
+// 获取销售漏斗统计
+export function getFunnelStats() {
+  return request.get('/projects/stats/funnel')
+}

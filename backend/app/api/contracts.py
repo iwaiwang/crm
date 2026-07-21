@@ -36,7 +36,7 @@ from app.services.ai_parser import ai_service
 
 router = APIRouter()
 
-SUPPORTED_CONTRACT_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png"]
+SUPPORTED_CONTRACT_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "gif", "bmp", "webp"]
 
 
 def _clean_text(value: Optional[str]) -> Optional[str]:
@@ -71,7 +71,7 @@ def _to_date(value) -> Optional[date]:
 
 
 def _generate_contract_no() -> str:
-    return f"AI-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    return f"HT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
 
 def _resolve_receivable_due_date(raw_due_date, contract_start_date: Optional[date]) -> date:
@@ -352,6 +352,8 @@ async def get_contracts(
     year: Optional[int] = None,
     status: Optional[str] = None,
     customer_id: Optional[str] = None,
+    sort_by: Optional[str] = Query(None, description="排序字段: customer_name, amount, sign_date"),
+    sort_order: Optional[str] = Query("asc", description="排序方向: asc, desc"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_any_menu_permission(['contracts', 'reimbursements'])),
 ):
@@ -360,24 +362,47 @@ async def get_contracts(
     if search:
         query = query.where((Contract.name.contains(search)) | (Contract.contract_no.contains(search)))
     if year:
-        query = query.where(func.extract("year", Contract.start_date) == year)
+        query = query.where(func.extract("year", Contract.sign_date) == year)
     if status:
         query = query.where(Contract.status == status)
     if customer_id:
         query = query.where(Contract.customer_id == customer_id)
 
+    # 按客户名称排序时需要 join Customer 表
+    if sort_by == "customer_name":
+        query = query.outerjoin(Customer, Contract.customer_id == Customer.id)
+
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar()
 
+    # 动态排序
+    sort_mapping = {
+        "customer_name": Customer.name,
+        "amount": Contract.amount,
+        "sign_date": Contract.sign_date,
+    }
+
+    if sort_by and sort_by in sort_mapping:
+        order_col = sort_mapping[sort_by]
+        query = query.order_by(order_col.desc()) if sort_order == "desc" else query.order_by(order_col.asc())
+    else:
+        query = query.order_by(Contract.created_at.desc())
+
     result = await db.execute(
-        query.order_by(Contract.created_at.desc())
-        .options(selectinload(Contract.files))
+        query
+        .options(selectinload(Contract.files), selectinload(Contract.customer))
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
     contracts = result.scalars().all()
 
-    return ContractListResponse(total=total, items=[ContractResponse.model_validate(item) for item in contracts])
+    items = []
+    for item in contracts:
+        resp = ContractResponse.model_validate(item)
+        resp.customer_name = item.customer.name if item.customer else ""
+        items.append(resp)
+
+    return ContractListResponse(total=total, items=items)
 
 
 @router.get("/{contract_id}", response_model=ContractResponse)
@@ -392,7 +417,10 @@ async def create_contract(contract: ContractCreate, db: AsyncSession = Depends(g
     if not customer_result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="客户不存在")
 
-    payload = contract.model_dump(exclude={"file_id", "file_url"})
+    # 编号为空时自动生成
+    contract_no = _clean_text(contract.contract_no) or _generate_contract_no()
+    payload = contract.model_dump(exclude={"file_id", "file_url", "contract_no"})
+    payload["contract_no"] = contract_no
     db_contract = Contract(**payload)
     db.add(db_contract)
 
@@ -445,7 +473,8 @@ async def preview_ai_contract_import(
         customer_id=matched_customer.id if matched_customer else None,
         customer_name=customer_name,
         amount=amount,
-        start_date=_to_date(parsed_data.get("start_date") or parsed_data.get("sign_date")),
+        sign_date=_to_date(parsed_data.get("sign_date")),
+        start_date=_to_date(parsed_data.get("start_date")),
         end_date=_to_date(parsed_data.get("end_date")),
         status="signed",
         payment_terms=_clean_text(parsed_data.get("payment_terms")),
@@ -476,7 +505,7 @@ async def confirm_ai_contract_import(
     customer = await _get_or_create_customer(contract_data.customer_id, contract_data.customer_name, db)
 
     if not _clean_text(contract_data.contract_no):
-        raise HTTPException(status_code=400, detail="合同编号不能为空")
+        contract_data.contract_no = _generate_contract_no()
     if not _clean_text(contract_data.name):
         raise HTTPException(status_code=400, detail="合同名称不能为空")
 
@@ -485,6 +514,7 @@ async def confirm_ai_contract_import(
         name=contract_data.name.strip(),
         customer_id=customer.id,
         amount=_to_decimal(contract_data.amount),
+        sign_date=_to_date(contract_data.sign_date),
         start_date=_to_date(contract_data.start_date),
         end_date=_to_date(contract_data.end_date),
         status=contract_data.status or "signed",

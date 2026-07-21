@@ -25,21 +25,23 @@ class Reimbursement(Base):
     supplier_name = Column(String(100), nullable=False, comment="供应商/收款方名称")
     supplier_tax_id = Column(String(50), comment="收款方税号")
     supplier_bank_name = Column(String(100), comment="开户行")
+    supplier_bank_branch = Column(String(100), comment="支行名称")
+    supplier_bank_province = Column(String(50), comment="开户行省份")
+    supplier_bank_city = Column(String(50), comment="开户行城市")
+    supplier_bank_code = Column(String(20), comment="联行号")
     supplier_bank_account = Column(String(50), comment="银行账号")
     amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="报销金额不含税")
     tax_amount = Column(DECIMAL(15, 2), default=0, comment="税额")
     total_amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="价税合计")
-    expense_category = Column(
-        SQLEnum(
-            "catering", "travel", "procurement", "office", "rent",
-            "utilities", "salary", "marketing", "software", "maintenance",
-            "training", "entertainment", "logistics", "other",
-            name="reimbursement_category"
-        ),
-        default="other",
-        comment="费用分类"
-    )
+    expense_category = Column(String(50), default="other", comment="费用分类")
+    payer_company = Column(String(100), nullable=True, comment="支付方公司名称")
     remark = Column(Text, comment="备注说明")
+
+    # 报销种类：invoice_company(发票·公司直付) / invoice_personal(发票·个人垫付) / allowance_travel(出差津贴)
+    reimbursement_kind = Column(String(30), default="invoice_company", comment="报销种类")
+    travel_start_date = Column(Date, nullable=True, comment="出差开始日期(津贴)")
+    travel_end_date = Column(Date, nullable=True, comment="出差结束日期(津贴)")
+    travel_destination = Column(String(200), nullable=True, comment="出差地点(津贴)")
 
     # 附件
     file_id = Column(String(36), comment="附件文件ID")

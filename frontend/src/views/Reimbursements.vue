@@ -9,6 +9,20 @@
         <el-button type="primary" @click="openAddDialog">
           <el-icon><Plus /></el-icon> 新增报销单
         </el-button>
+        <el-button
+          type="success"
+          :disabled="selectedReimbursements.length === 0"
+          @click="exportToExcel"
+        >
+          <el-icon><Download /></el-icon> 导出 Excel ({{ selectedReimbursements.length }})
+        </el-button>
+        <el-button
+          type="warning"
+          :disabled="selectedReimbursements.length === 0"
+          @click="handleBatchPaymentExport"
+        >
+          <el-icon><Download /></el-icon> 导出批量支付 ({{ selectedReimbursements.length }})
+        </el-button>
       </div>
     </div>
 
@@ -57,20 +71,7 @@
         </el-form-item>
         <el-form-item label="费用分类">
           <el-select v-model="searchForm.expense_category" placeholder="全部分类" clearable @change="handleSearch">
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="房租" value="rent" />
-            <el-option label="水电" value="utilities" />
-            <el-option label="工资" value="salary" />
-            <el-option label="市场推广" value="marketing" />
-            <el-option label="软件服务" value="software" />
-            <el-option label="维修维护" value="maintenance" />
-            <el-option label="培训" value="training" />
-            <el-option label="业务招待" value="entertainment" />
-            <el-option label="物流快递" value="logistics" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="年份">
@@ -81,6 +82,23 @@
         <el-form-item label="供应商">
           <el-input v-model="searchForm.search" placeholder="供应商名称" clearable @keyup.enter="handleSearch" />
         </el-form-item>
+        <el-form-item label="支付方">
+          <el-select
+            v-model="searchForm.payer_company"
+            placeholder="全部支付方"
+            clearable
+            filterable
+            @change="handleSearch"
+            style="width: 180px"
+          >
+            <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="种类">
+          <el-select v-model="searchForm.reimbursement_kind" placeholder="全部种类" clearable @change="handleSearch" style="width: 180px">
+            <el-option v-for="k in kindOptions" :key="k.value" :label="k.label" :value="k.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -90,8 +108,34 @@
 
     <!-- 报销单列表 -->
     <el-card class="table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <div class="statistics-bar" v-if="selectedReimbursements.length > 0">
+        <el-tag type="primary" size="large">已选择 {{ selectedReimbursements.length }} 张报销单</el-tag>
+        <span class="stat-item">合计金额：<span class="stat-value">¥{{ selectedTotalAmount.toLocaleString() }}</span></span>
+        <el-button link type="primary" @click="clearSelection">清除选择</el-button>
+      </div>
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange" ref="tableRef">
+        <el-table-column type="selection" width="55" />
+        <el-table-column label="种类" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.reimbursement_kind === 'allowance_travel' ? 'warning' : (row.reimbursement_kind === 'invoice_personal' ? 'success' : '')" size="small">
+              {{ getKindLabel(row.reimbursement_kind) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="编号" width="120">
+          <template #default="{ row }">
+            <el-tooltip :content="row.id" placement="top">
+              <span class="reim-id" @click="copyId(row.id)">{{ formatId(row.id) }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column prop="supplier_name" label="供应商/收款方" width="150" />
+        <el-table-column prop="payer_company" label="支付方" width="200">
+          <template #default="{ row }">
+            <el-tag v-if="row.payer_company" type="info" effect="plain">{{ row.payer_company }}</el-tag>
+            <span v-else class="text-muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="total_amount" label="报销金额" width="120" align="right">
           <template #default="{ row }">¥{{ Number(row.total_amount).toLocaleString() }}</template>
         </el-table-column>
@@ -117,11 +161,11 @@
               <el-button link type="success" @click="handleSubmit(row)">提交</el-button>
               <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </template>
-            <template v-else-if="row.status === 'pending' && isAdmin">
+            <template v-else-if="row.status === 'pending' && row.can_approve">
               <el-button link type="success" @click="openApproveDialog(row)">审核通过</el-button>
               <el-button link type="danger" @click="openRejectDialog(row)">驳回</el-button>
             </template>
-            <template v-else-if="row.status === 'approved' && isAdmin">
+            <template v-else-if="row.status === 'approved' && row.can_pay">
               <el-button link type="success" @click="handlePay(row)">确认支付</el-button>
             </template>
             <template v-else-if="row.status === 'rejected'">
@@ -155,6 +199,39 @@
       direction="rtl"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="120px">
+        <!-- 报销种类 -->
+        <el-divider content-position="left">报销种类</el-divider>
+        <el-form-item label="种类" prop="reimbursement_kind">
+          <el-radio-group v-model="formData.reimbursement_kind">
+            <el-radio v-for="k in kindOptions" :key="k.value" :label="k.value">{{ k.label }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="出差信息" v-if="formData.reimbursement_kind === 'allowance_travel'">
+          <el-row :gutter="12" style="width: 100%">
+            <el-col :span="8">
+              <el-date-picker
+                v-model="formData.travel_start_date"
+                type="date"
+                placeholder="开始日期"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-date-picker
+                v-model="formData.travel_end_date"
+                type="date"
+                placeholder="结束日期"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-input v-model="formData.travel_destination" placeholder="出差地点（可选）" />
+            </el-col>
+          </el-row>
+        </el-form-item>
+
         <!-- 收款方信息 -->
         <el-divider content-position="left">收款方信息</el-divider>
         <el-form-item label="供应商/收款方" prop="supplier_name">
@@ -188,6 +265,30 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="支行">
+              <el-input v-model="formData.supplier_bank_branch" placeholder="支行名称" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="开户行省份">
+              <el-input v-model="formData.supplier_bank_province" placeholder="开户行所在省份" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="开户行城市">
+              <el-input v-model="formData.supplier_bank_city" placeholder="开户行所在城市" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="联行号">
+              <el-input v-model="formData.supplier_bank_code" placeholder="12位联行号" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
             <el-form-item label="银行账号">
               <el-input v-model="formData.supplier_bank_account" placeholder="银行账号" />
             </el-form-item>
@@ -198,43 +299,47 @@
         <el-divider content-position="left">金额信息</el-divider>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="报销金额(不含税)" prop="amount">
+            <el-form-item :label="formData.reimbursement_kind === 'allowance_travel' ? '津贴金额' : '报销金额(不含税)'" prop="amount">
               <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="12" v-if="formData.reimbursement_kind !== 'allowance_travel'">
             <el-form-item label="税额">
               <el-input-number v-model="formData.tax_amount" :min="0" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="价税合计">
+        <el-form-item :label="formData.reimbursement_kind === 'allowance_travel' ? '合计' : '价税合计'">
           <el-input-number v-model="formData.total_amount" :min="0" :precision="2" style="width: 100%" disabled />
         </el-form-item>
 
         <!-- 分类和关联 -->
         <el-divider content-position="left">分类与关联</el-divider>
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :span="12" v-if="formData.reimbursement_kind !== 'allowance_travel'">
             <el-form-item label="费用分类" prop="expense_category">
-              <el-select v-model="formData.expense_category" style="width: 100%">
-                <el-option label="餐饮" value="catering" />
-                <el-option label="差旅" value="travel" />
-                <el-option label="采购" value="procurement" />
-                <el-option label="办公" value="office" />
-                <el-option label="房租" value="rent" />
-                <el-option label="水电" value="utilities" />
-                <el-option label="工资" value="salary" />
-                <el-option label="市场推广" value="marketing" />
-                <el-option label="软件服务" value="software" />
-                <el-option label="维修维护" value="maintenance" />
-                <el-option label="培训" value="training" />
-                <el-option label="业务招待" value="entertainment" />
-                <el-option label="物流快递" value="logistics" />
-                <el-option label="其他" value="other" />
+              <el-select v-model="formData.expense_category" style="width: 100%" filterable allow-create>
+                <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="支付方" prop="payer_company">
+              <el-select
+                v-model="formData.payer_company"
+                placeholder="选择支付方公司"
+                clearable
+                filterable
+                allow-create
+                style="width: 100%"
+              >
+                <el-option v-for="name in payerCompanies" :key="name" :label="name" :value="name" />
+              </el-select>
+              <div class="form-tip" v-if="!payerCompanies.length">尚未配置支付方，请到 系统设置 → 报销设置 中维护。</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16" v-if="formData.reimbursement_kind !== 'allowance_travel'">
           <el-col :span="12">
             <el-form-item label="关联发票">
               <el-select v-model="formData.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
@@ -242,12 +347,15 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="关联合同">
+              <el-select v-model="formData.contract_id" placeholder="选择合同（可选）" clearable style="width: 100%">
+                <el-option v-for="c in contracts" :key="c.id" :label="c.contract_no" :value="c.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
-        <el-form-item label="关联合同">
-          <el-select v-model="formData.contract_id" placeholder="选择合同（可选）" clearable style="width: 100%">
-            <el-option v-for="c in contracts" :key="c.id" :label="c.contract_no" :value="c.id" />
-          </el-select>
-        </el-form-item>
+        <div class="form-tip" v-if="formData.reimbursement_kind === 'allowance_travel'">出差津贴无需税额/费用分类（自动归入"差旅"），无需关联发票。可上传 Excel 出差明细作为附件（可选）。</div>
 
         <!-- 附件上传 -->
         <el-divider content-position="left">附件</el-divider>
@@ -281,11 +389,7 @@
         </el-form-item>
         <el-form-item label="修改分类">
           <el-select v-model="approveForm.expense_category" style="width: 100%" placeholder="不修改则保持原分类" clearable>
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -312,10 +416,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, MagicStick } from '@element-plus/icons-vue'
-import { useUserStore } from '@/store/user'
+import { Plus, MagicStick, Download } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
 import {
   getReimbursements,
   createReimbursement,
@@ -326,15 +430,15 @@ import {
   rejectReimbursement,
   payReimbursement,
   getReimbursementStatistics,
+  getReimbursementPayerCompanies,
+  getReimbursementExpenseCategories,
+  exportBatchPayment,
 } from '@/api/reimbursement'
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
 import { searchSuppliers } from '@/api/supplier'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 import AiReimbursementImportDrawer from '@/components/AiReimbursementImportDrawer.vue'
-
-const userStore = useUserStore()
-const isAdmin = computed(() => userStore.user?.role === 'admin')
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -344,9 +448,125 @@ const showApproveDialog = ref(false)
 const showRejectDialog = ref(false)
 const formRef = ref(null)
 const rejectFormRef = ref(null)
+const tableRef = ref(null)
 const tableData = ref([])
 const purchaseInvoices = ref([])
 const contracts = ref([])
+const payerCompanies = ref([])
+const expenseCategories = ref([])
+const selectedReimbursements = ref([])
+
+const selectedTotalAmount = computed(() => {
+  return selectedReimbursements.value.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
+})
+
+const handleSelectionChange = (selection) => {
+  selectedReimbursements.value = selection
+}
+
+const clearSelection = () => {
+  tableRef.value?.clearSelection()
+  selectedReimbursements.value = []
+}
+
+const exportToExcel = () => {
+  if (selectedReimbursements.value.length === 0) {
+    ElMessage.warning('请先选择要导出的报销单')
+    return
+  }
+  const rows = selectedReimbursements.value.map((r, idx) => ({
+    '序号': idx + 1,
+    '编号': formatId(r.id),
+    '完整编号': r.id,
+    '种类': getKindLabel(r.reimbursement_kind),
+    '供应商/收款方': r.supplier_name || '',
+    '税号': r.supplier_tax_id || '',
+    '开户行': r.supplier_bank_name || '',
+    '支行': r.supplier_bank_branch || '',
+    '开户行省份': r.supplier_bank_province || '',
+    '开户行城市': r.supplier_bank_city || '',
+    '联行号': r.supplier_bank_code || '',
+    '银行账号': r.supplier_bank_account || '',
+    '报销金额(不含税)': Number(r.amount || 0),
+    '税额': Number(r.tax_amount || 0),
+    '价税合计': Number(r.total_amount || 0),
+    '费用分类': getCategoryLabel(r.expense_category),
+    '支付方': r.payer_company || '',
+    '出差开始': r.travel_start_date || '',
+    '出差结束': r.travel_end_date || '',
+    '出差地点': r.travel_destination || '',
+    '状态': getStatusLabel(r.status),
+    '录入人': r.creator_name || '',
+    '审核人': r.approver_name || '',
+    '支付确认人': r.payer_name || '',
+    '创建时间': formatDate(r.created_at),
+    '审核时间': r.approved_at ? formatDate(r.approved_at) : '',
+    '支付时间': r.paid_at ? formatDate(r.paid_at) : '',
+    '驳回原因': r.reject_reason || '',
+    '备注': r.remark || '',
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 6 },   // 序号
+    { wch: 14 },  // 编号
+    { wch: 36 },  // 完整编号
+    { wch: 14 },  // 种类
+    { wch: 20 },  // 供应商
+    { wch: 18 },  // 税号
+    { wch: 20 },  // 开户行
+    { wch: 18 },  // 支行
+    { wch: 14 },  // 开户行省份
+    { wch: 14 },  // 开户行城市
+    { wch: 14 },  // 联行号
+    { wch: 22 },  // 银行账号
+    { wch: 14 },  // 报销金额
+    { wch: 12 },  // 税额
+    { wch: 14 },  // 价税合计
+    { wch: 12 },  // 费用分类
+    { wch: 18 },  // 支付方
+    { wch: 14 },  // 出差开始
+    { wch: 14 },  // 出差结束
+    { wch: 18 },  // 出差地点
+    { wch: 10 },  // 状态
+    { wch: 12 },  // 录入人
+    { wch: 12 },  // 审核人
+    { wch: 12 },  // 支付确认人
+    { wch: 20 },  // 创建时间
+    { wch: 20 },  // 审核时间
+    { wch: 20 },  // 支付时间
+    { wch: 24 },  // 驳回原因
+    { wch: 30 },  // 备注
+  ]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '报销单')
+  const dateStr = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(wb, `报销单导出_${dateStr}.xlsx`)
+  ElMessage.success(`已导出 ${rows.length} 张报销单`)
+}
+
+const handleBatchPaymentExport = async () => {
+  if (selectedReimbursements.value.length === 0) {
+    ElMessage.warning('请先选择要导出的报销单')
+    return
+  }
+  try {
+    const ids = selectedReimbursements.value.map(r => r.id)
+    const response = await exportBatchPayment(ids)
+    const url = window.URL.createObjectURL(new Blob([response]))
+    const link = document.createElement('a')
+    link.href = url
+    const dateStr = new Date().toISOString().slice(0, 10)
+    link.setAttribute('download', `批量支付_${dateStr}.xlsx`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${ids.length} 张报销单为批量支付格式`)
+  } catch (error) {
+    ElMessage.error('导出批量支付失败')
+  }
+}
 const fileInfo = ref(null)
 const documentUploaderKey = ref(0)
 const statistics = ref({
@@ -364,27 +584,49 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i)
 const searchForm = reactive({
   status: '',
   expense_category: '',
+  payer_company: '',
+  reimbursement_kind: '',
   year: null,
   search: '',
 })
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
+const kindOptions = [
+  { value: 'invoice_company', label: '发票·公司直付' },
+  { value: 'invoice_personal', label: '发票·个人垫付' },
+  { value: 'allowance_travel', label: '出差津贴' },
+]
+
+const getKindLabel = (kind) => {
+  const found = kindOptions.find(o => o.value === kind)
+  return found ? found.label : (kind || '-')
+}
+
 const formData = reactive({
   id: '',
   supplier_name: '',
   supplier_tax_id: '',
   supplier_bank_name: '',
+  supplier_bank_branch: '',
+  supplier_bank_province: '',
+  supplier_bank_city: '',
+  supplier_bank_code: '',
   supplier_bank_account: '',
   amount: 0,
   tax_amount: 0,
   total_amount: 0,
   expense_category: 'other',
+  payer_company: '',
   invoice_id: '',
   contract_id: '',
   remark: '',
   file_id: '',
   file_url: '',
+  reimbursement_kind: 'invoice_company',
+  travel_start_date: null,
+  travel_end_date: null,
+  travel_destination: '',
 })
 
 const approveForm = reactive({
@@ -443,13 +685,33 @@ const statusTypes = {
   paid: 'success',
 }
 
-const getCategoryLabel = (category) => categoryLabels[category] || category
+const getCategoryLabel = (category) => {
+  const found = expenseCategories.value.find(c => c.value === category)
+  if (found) return found.label
+  return categoryLabels[category] || category
+}
 const getStatusLabel = (status) => statusLabels[status] || status
 const getStatusType = (status) => statusTypes[status] || 'info'
 
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+// 报销单编号显示用：BX + UUID 前 8 位（便于区分）
+const formatId = (id) => {
+  if (!id) return ''
+  const short = id.replace(/-/g, '').slice(0, 8).toUpperCase()
+  return `BX-${short}`
+}
+
+const copyId = async (id) => {
+  try {
+    await navigator.clipboard.writeText(id)
+    ElMessage.success('已复制完整编号')
+  } catch (e) {
+    ElMessage.warning('复制失败，请手动选择')
+  }
 }
 
 // 收款方自动补全
@@ -471,6 +733,10 @@ const handleSupplierSelect = (item) => {
   formData.supplier_name = item.name
   formData.supplier_tax_id = item.tax_id || ''
   formData.supplier_bank_name = item.bank_name || ''
+  formData.supplier_bank_branch = item.bank_branch || ''
+  formData.supplier_bank_province = item.bank_province || ''
+  formData.supplier_bank_city = item.city || ''
+  formData.supplier_bank_code = item.bank_code || ''
   formData.supplier_bank_account = item.bank_account || ''
 }
 
@@ -487,6 +753,8 @@ const loadReimbursements = async () => {
       page_size: pagination.page_size,
       status: searchForm.status,
       expense_category: searchForm.expense_category,
+      payer_company: searchForm.payer_company,
+      reimbursement_kind: searchForm.reimbursement_kind,
       year: searchForm.year,
       search: searchForm.search,
     })
@@ -526,6 +794,26 @@ const loadContracts = async () => {
   }
 }
 
+const loadPayerCompanies = async () => {
+  try {
+    const res = await getReimbursementPayerCompanies()
+    payerCompanies.value = res.items || []
+  } catch (error) {
+    console.error('加载支付方列表失败:', error)
+    payerCompanies.value = []
+  }
+}
+
+const loadExpenseCategories = async () => {
+  try {
+    const res = await getReimbursementExpenseCategories()
+    expenseCategories.value = res.items || []
+  } catch (error) {
+    console.error('加载费用分类失败:', error)
+    expenseCategories.value = []
+  }
+}
+
 const handleSearch = () => {
   pagination.page = 1
   loadReimbursements()
@@ -535,6 +823,8 @@ const handleSearch = () => {
 const handleReset = () => {
   searchForm.status = ''
   searchForm.expense_category = ''
+  searchForm.payer_company = ''
+  searchForm.reimbursement_kind = ''
   searchForm.year = null
   searchForm.search = ''
   handleSearch()
@@ -547,22 +837,33 @@ const openAddDialog = () => {
     supplier_name: '',
     supplier_tax_id: '',
     supplier_bank_name: '',
+    supplier_bank_branch: '',
+    supplier_bank_province: '',
+    supplier_bank_city: '',
+    supplier_bank_code: '',
     supplier_bank_account: '',
     amount: 0,
     tax_amount: 0,
     total_amount: 0,
     expense_category: 'other',
+    payer_company: '',
     invoice_id: '',
     contract_id: '',
     remark: '',
     file_id: '',
     file_url: '',
+    reimbursement_kind: 'invoice_company',
+    travel_start_date: null,
+    travel_end_date: null,
+    travel_destination: '',
   })
   fileInfo.value = null
   documentUploaderKey.value++
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
+  loadPayerCompanies()
+  loadExpenseCategories()
 }
 
 const handleEdit = (row) => {
@@ -572,16 +873,25 @@ const handleEdit = (row) => {
     supplier_name: row.supplier_name,
     supplier_tax_id: row.supplier_tax_id || '',
     supplier_bank_name: row.supplier_bank_name || '',
+    supplier_bank_branch: row.supplier_bank_branch || '',
+    supplier_bank_province: row.supplier_bank_province || '',
+    supplier_bank_city: row.supplier_bank_city || '',
+    supplier_bank_code: row.supplier_bank_code || '',
     supplier_bank_account: row.supplier_bank_account || '',
     amount: Number(row.amount),
     tax_amount: Number(row.tax_amount || 0),
     total_amount: Number(row.total_amount),
     expense_category: row.expense_category,
+    payer_company: row.payer_company || '',
     invoice_id: row.invoice_id || '',
     contract_id: row.contract_id || '',
     remark: row.remark || '',
     file_id: row.file_id || '',
     file_url: row.file_url || '',
+    reimbursement_kind: row.reimbursement_kind || 'invoice_company',
+    travel_start_date: row.travel_start_date || null,
+    travel_end_date: row.travel_end_date || null,
+    travel_destination: row.travel_destination || '',
   })
   // 设置文件信息
   if (row.file_id && row.file_url) {
@@ -598,6 +908,8 @@ const handleEdit = (row) => {
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
+  loadPayerCompanies()
+  loadExpenseCategories()
 }
 
 // 处理文件变化
@@ -618,9 +930,18 @@ const handleSave = async () => {
     if (valid) {
       submitting.value = true
       try {
+        const isAllowance = formData.reimbursement_kind === 'allowance_travel'
         const data = {
           ...formData,
-          total_amount: Number(formData.amount) + Number(formData.tax_amount),
+          // 津贴场景：无税，分类强制差旅
+          ...(isAllowance ? {
+            tax_amount: 0,
+            total_amount: Number(formData.amount),
+            expense_category: 'travel',
+            supplier_tax_id: null,
+          } : {
+            total_amount: Number(formData.amount) + Number(formData.tax_amount),
+          }),
         }
         // 移除空字符串字段
         Object.keys(data).forEach(key => {
@@ -628,6 +949,9 @@ const handleSave = async () => {
             data[key] = null
           }
         })
+        // 日期空串转 null
+        if (data.travel_start_date === '') data.travel_start_date = null
+        if (data.travel_end_date === '') data.travel_end_date = null
         if (formData.id) {
           await updateReimbursement(formData.id, data)
           ElMessage.success('更新成功')
@@ -737,6 +1061,7 @@ const handleDelete = async (row) => {
 const handleView = (row) => {
   ElMessageBox.alert(`
     供应商：${row.supplier_name}
+    支付方：${row.payer_company || '未填写'}
     税号：${row.supplier_tax_id || '未填写'}
     开户行：${row.supplier_bank_name || '未填写'}
     银行账号：${row.supplier_bank_account || '未填写'}
@@ -757,6 +1082,8 @@ const handleAiImportSuccess = () => {
 onMounted(() => {
   loadReimbursements()
   loadStatistics()
+  loadPayerCompanies()
+  loadExpenseCategories()
 })
 </script>
 
@@ -841,5 +1168,50 @@ onMounted(() => {
 .supplier-bank {
   font-size: 12px;
   color: #909399;
+}
+
+.text-muted {
+  color: #c0c4cc;
+}
+
+.reim-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reim-id:hover {
+  text-decoration: underline;
+}
+
+.statistics-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f0f9ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #bae6ff;
+}
+
+.statistics-bar .stat-item {
+  font-size: 14px;
+  color: #606266;
+}
+
+.statistics-bar .stat-value {
+  font-weight: bold;
+  color: #409eff;
+  font-size: 16px;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 </style>

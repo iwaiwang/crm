@@ -28,11 +28,17 @@ async def get_receivables(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
     contract_id: Optional[str] = None,
+    sort_by: Optional[str] = Query(None, description="排序字段: contract_no, amount, due_date, received_amount, status, created_at"),
+    sort_order: Optional[str] = Query("asc", description="排序方向: asc, desc"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_menu_permission('receivables')),
 ):
     """获取应收款列表"""
     query = select(Receivable).options(selectinload(Receivable.payment_records), selectinload(Receivable.contract))
+
+    # 按合同编号排序时需要 join Contract 表
+    if sort_by == "contract_no":
+        query = query.outerjoin(Contract, Receivable.contract_id == Contract.id)
 
     if status:
         query = query.where(Receivable.status == status)
@@ -43,18 +49,34 @@ async def get_receivables(
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    query = query.order_by(Receivable.due_date.asc())
+    # 动态排序
+    sort_mapping = {
+        "contract_no": Contract.contract_no,
+        "amount": Receivable.amount,
+        "due_date": Receivable.due_date,
+        "received_amount": Receivable.received_amount,
+        "status": Receivable.status,
+        "created_at": Receivable.created_at,
+    }
+
+    if sort_by and sort_by in sort_mapping:
+        order_col = sort_mapping[sort_by]
+        query = query.order_by(order_col.desc()) if sort_order == "desc" else query.order_by(order_col.asc())
+    else:
+        query = query.order_by(Receivable.due_date.asc())
+
     query = query.offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
     receivables = result.scalars().all()
 
-    # 构建返回数据，添加 contract_no 字段
+    # 构建返回数据，添加合同信息
     items = []
     for r in receivables:
         r_dict = ReceivableResponse.model_validate(r)
         if r.contract:
             r_dict.contract_no = r.contract.contract_no
+            r_dict.contract_name = r.contract.name
         items.append(r_dict)
 
     return ReceivableListResponse(
@@ -100,7 +122,7 @@ async def create_receivable(receivable: ReceivableCreate, db: AsyncSession = Dep
     )
     db_receivable = result.scalar_one()
 
-    # 构建响应数据，包含 contract_no
+    # 构建响应数据，包含合同信息
     response_data = ReceivableResponse(
         id=db_receivable.id,
         contract_id=db_receivable.contract_id,
@@ -113,6 +135,7 @@ async def create_receivable(receivable: ReceivableCreate, db: AsyncSession = Dep
         updated_at=db_receivable.updated_at,
         payment_records=[],
         contract_no=contract.contract_no,
+        contract_name=contract.name,
     )
 
     return response_data
@@ -134,10 +157,11 @@ async def update_receivable(receivable_id: str, receivable: ReceivableUpdate, db
     await db.commit()
     await db.refresh(db_receivable)
 
-    # 构建响应数据，包含 contract_no
+    # 构建响应数据，包含合同信息
     response_data = ReceivableResponse.model_validate(db_receivable)
     if db_receivable.contract:
         response_data.contract_no = db_receivable.contract.contract_no
+        response_data.contract_name = db_receivable.contract.name
 
     return response_data
 
@@ -167,7 +191,7 @@ async def add_payment(
     db.add(db_payment)
 
     # 更新应收款已收金额和状态
-    db_receivable.received_amount = float(db_receivable.received_amount) + float(payment.amount)
+    db_receivable.received_amount = db_receivable.received_amount + payment.amount
 
     if db_receivable.received_amount >= db_receivable.amount:
         db_receivable.status = "paid"
@@ -301,7 +325,7 @@ async def delete_payment_record(
     db_receivable = receivable_result.scalar_one_or_none()
     if db_receivable:
         # 重新计算已收金额
-        db_receivable.received_amount = float(db_receivable.received_amount) - float(db_payment.amount)
+        db_receivable.received_amount = db_receivable.received_amount - db_payment.amount
         if db_receivable.received_amount <= 0:
             db_receivable.received_amount = 0
             db_receivable.status = "unpaid"

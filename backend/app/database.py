@@ -60,6 +60,9 @@ async def auto_migrate_columns():
 
     db_path = os.path.join(DATA_DIR, 'crm.db')
 
+    # 特殊迁移：将 customers 表的旧联系人字段迁移到 customer_contacts 表
+    _migrate_customer_contacts(db_path)
+
     # 获取所有模型类
     models = Base.registry._class_registry.values()
 
@@ -91,6 +94,94 @@ async def auto_migrate_columns():
                 cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
                 conn.commit()
                 conn.close()
+
+
+def _migrate_customer_contacts(db_path):
+    """将 customers 表上的旧 contact/phone/email 列迁移到 customer_contacts 表"""
+    import sqlite3
+    import uuid
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 检查旧列是否存在
+    cursor.execute("PRAGMA table_info(customers)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    conn.close()
+
+    if "contact" not in existing_cols:
+        return  # 已迁移过，跳过
+
+    print("[MIGRATE] Moving customer contact fields to customer_contacts table...")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 创建 customer_contacts 表（如果不存在）
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_contacts'")
+    if not cursor.fetchone():
+        cursor.execute("""
+            CREATE TABLE customer_contacts (
+                id VARCHAR(36) PRIMARY KEY,
+                customer_id VARCHAR(36) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                phone VARCHAR(50),
+                email VARCHAR(100),
+                position VARCHAR(100),
+                is_primary BOOLEAN DEFAULT 0,
+                remark TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    # 迁移数据
+    cursor.execute("SELECT id, name, contact, phone, email FROM customers WHERE contact IS NOT NULL AND contact != ''")
+    rows = cursor.fetchall()
+    for row in rows:
+        customer_id, customer_name, contact, phone, email = row
+        contact_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO customer_contacts (id, customer_id, name, phone, email, is_primary) VALUES (?, ?, ?, ?, ?, 1)",
+            (contact_id, customer_id, contact, phone, email)
+        )
+    migrated = len(rows)
+
+    # 为没有联系人的客户自动创建默认联系人
+    cursor.execute("""
+        SELECT c.id, c.name, c.phone, c.email FROM customers c
+        WHERE NOT EXISTS (SELECT 1 FROM customer_contacts cc WHERE cc.customer_id = c.id)
+    """)
+    no_contact_rows = cursor.fetchall()
+    auto_created = 0
+    for row in no_contact_rows:
+        customer_id, customer_name, phone, email = row
+        contact_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO customer_contacts (id, customer_id, name, phone, email, is_primary) VALUES (?, ?, ?, ?, ?, 1)",
+            (contact_id, customer_id, customer_name, phone or '', email or '')
+        )
+        auto_created += 1
+
+    conn.commit()
+
+    # 删除旧列（SQLite 需要重建表）
+    cursor.execute("PRAGMA table_info(customers)")
+    all_cols = cursor.fetchall()
+    keep_cols = [(c[1], c[2], c[3], c[4]) for c in all_cols if c[1] not in ("contact", "phone", "email")]
+    col_names = [c[0] for c in keep_cols]
+    col_defs = ", ".join(
+        f"{c[0]} {c[1]}" + (" NOT NULL" if c[2] else "") + (f" DEFAULT {c[3]}" if c[3] is not None else "")
+        for c in keep_cols
+    )
+
+    cursor.execute("ALTER TABLE customers RENAME TO customers_old")
+    cursor.execute(f"CREATE TABLE customers ({col_defs})")
+    cursor.execute(f"INSERT INTO customers ({', '.join(col_names)}) SELECT {', '.join(col_names)} FROM customers_old")
+    cursor.execute("DROP TABLE customers_old")
+    conn.commit()
+    conn.close()
+
+    print(f"[MIGRATE] Migrated {migrated} contacts, auto-created {auto_created} defaults")
 
 
 def _get_sqlite_type(col_type):

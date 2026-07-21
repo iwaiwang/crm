@@ -158,10 +158,11 @@ async def get_receivable_stats(db: AsyncSession) -> ReceivableStats:
     )
     statuses = dict(status_result.all())
 
+    today = date.today()
     overdue_result = await db.execute(
         select(func.count()).where(
             Receivable.status != "paid",
-            Receivable.due_date < date.today()
+            Receivable.due_date < today
         )
     )
     overdue_count = overdue_result.scalar() or 0
@@ -169,10 +170,36 @@ async def get_receivable_stats(db: AsyncSession) -> ReceivableStats:
     overdue_amount_result = await db.execute(
         select(func.sum(Receivable.amount - Receivable.received_amount)).where(
             Receivable.status != "paid",
-            Receivable.due_date < date.today()
+            Receivable.due_date < today
         )
     )
     overdue_amount = overdue_amount_result.scalar() or 0
+
+    # 逾期明细列表
+    from app.schemas.dashboard import OverdueReceivableItem
+    overdue_items = []
+    overdue_query = await db.execute(
+        select(Receivable, Contract, Customer)
+        .join(Contract, Receivable.contract_id == Contract.id)
+        .outerjoin(Customer, Contract.customer_id == Customer.id)
+        .where(
+            Receivable.status != "paid",
+            Receivable.due_date < today
+        )
+        .order_by(Receivable.due_date.asc())
+    )
+    for r, ct, cu in overdue_query.all():
+        days_overdue = (today - r.due_date).days
+        overdue_items.append(OverdueReceivableItem(
+            id=r.id,
+            contract_no=ct.contract_no or "",
+            contract_name=ct.name or "",
+            customer_name=cu.name if cu else "",
+            unpaid_amount=r.amount - r.received_amount,
+            due_date=r.due_date.isoformat(),
+            days_overdue=days_overdue,
+            status=r.status,
+        ))
 
     return ReceivableStats(
         total_amount=total_amount,
@@ -182,6 +209,7 @@ async def get_receivable_stats(db: AsyncSession) -> ReceivableStats:
         paid_count=statuses.get("paid", 0),
         unpaid_count=statuses.get("unpaid", 0),
         overdue_count=overdue_count,
+        overdue_items=overdue_items,
     )
 
 
