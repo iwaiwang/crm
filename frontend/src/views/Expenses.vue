@@ -17,20 +17,7 @@
         </el-form-item>
         <el-form-item label="支出分类">
           <el-select v-model="searchForm.expense_category" placeholder="全部分类" clearable @change="handleSearch">
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="房租" value="rent" />
-            <el-option label="水电" value="utilities" />
-            <el-option label="工资" value="salary" />
-            <el-option label="市场推广" value="marketing" />
-            <el-option label="软件服务" value="software" />
-            <el-option label="维修维护" value="maintenance" />
-            <el-option label="培训" value="training" />
-            <el-option label="业务招待" value="entertainment" />
-            <el-option label="物流快递" value="logistics" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="供应商">
@@ -111,20 +98,7 @@
         </el-form-item>
         <el-form-item label="支出分类" prop="expense_category">
           <el-select v-model="formData.expense_category" style="width: 100%">
-            <el-option label="餐饮" value="catering" />
-            <el-option label="差旅" value="travel" />
-            <el-option label="采购" value="procurement" />
-            <el-option label="办公" value="office" />
-            <el-option label="房租" value="rent" />
-            <el-option label="水电" value="utilities" />
-            <el-option label="工资" value="salary" />
-            <el-option label="市场推广" value="marketing" />
-            <el-option label="软件服务" value="software" />
-            <el-option label="维修维护" value="maintenance" />
-            <el-option label="培训" value="training" />
-            <el-option label="业务招待" value="entertainment" />
-            <el-option label="物流快递" value="logistics" />
-            <el-option label="其他" value="other" />
+            <el-option v-for="c in expenseCategories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="支付方式" prop="payment_method">
@@ -152,7 +126,7 @@
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/api/expense'
+import { getExpenses, createExpense, updateExpense, deleteExpense, getExpenseCategories } from '@/api/expense'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -163,6 +137,7 @@ const selectedExpenses = ref([])
 
 const currentYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i)
+const expenseCategories = ref([])
 
 const searchForm = reactive({
   year: currentYear,
@@ -191,26 +166,10 @@ const rules = {
   amount: [{ required: true, message: '请输入支出金额', trigger: 'blur' }],
 }
 
-// 支出分类标签映射
-const expenseCategoryLabels = {
-  catering: '餐饮',
-  travel: '差旅',
-  procurement: '采购',
-  office: '办公',
-  rent: '房租',
-  utilities: '水电',
-  salary: '工资',
-  marketing: '市场推广',
-  software: '软件服务',
-  maintenance: '维修维护',
-  training: '培训',
-  entertainment: '业务招待',
-  logistics: '物流快递',
-  other: '其他',
-}
-
+// 支出分类标签映射（从系统设置加载）
 const getExpenseCategoryLabel = (category) => {
-  return expenseCategoryLabels[category] || category
+  const found = expenseCategories.value.find(c => c.value === category)
+  return found ? found.label : category
 }
 
 // 处理选择变化
@@ -334,8 +293,18 @@ const handleSubmit = async () => {
   })
 }
 
+const loadCategories = async () => {
+  try {
+    const res = await getExpenseCategories()
+    expenseCategories.value = res || []
+  } catch (error) {
+    console.error('加载费用分类失败:', error)
+  }
+}
+
 onMounted(() => {
   loadExpenses()
+  loadCategories()
 })
 </script>
 

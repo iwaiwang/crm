@@ -52,10 +52,10 @@ def recommend_expense_category(seller_name: Optional[str], remark: Optional[str]
 
     if any(kw in text for kw in ["餐", "饭", "酒店", "住宿", "机票", "车票", "火车", "打车", "滴滴", "出行", "差旅", "旅行"]):
         return "travel"
-    if any(kw in text for kw in ["采购", "进货", "原料", "材料", "设备", "物资"]):
+    if any(kw in text for kw in ["采购", "进货", "原料", "材料", "设备", "物资", "耗材", "货物", "器材"]):
         return "procurement"
-    if any(kw in text for kw in ["办公", "文具", "纸张", "打印机", "电脑", "IT", "软件", "系统", "服务", "云", "服务器", "域名", "阿里云", "腾讯云"]):
-        return "software" if any(kw in text for kw in ["软件", "系统", "云", "服务器", "域名"]) else "office"
+    if any(kw in text for kw in ["办公", "文具", "纸张", "打印机", "电脑", "IT", "软件", "系统", "服务", "云", "服务器", "域名", "阿里云", "腾讯云", "订阅", "license", "saas", "平台", "技术服务", "打印"]):
+        return "software" if any(kw in text for kw in ["软件", "系统", "云", "服务器", "域名", "订阅", "license", "saas", "平台", "技术服务"]) else "office"
     if any(kw in text for kw in ["房租", "租金", "物业", "租赁"]):
         return "rent"
     if any(kw in text for kw in ["水电", "电费", "水费", "燃气", "宽带", "网络"]):
@@ -68,9 +68,9 @@ def recommend_expense_category(seller_name: Optional[str], remark: Optional[str]
         return "maintenance"
     if any(kw in text for kw in ["培训", "学习", "课程", "教育", "会议"]):
         return "training"
-    if any(kw in text for kw in ["招待", "宴请", "礼品", "送礼"]):
+    if any(kw in text for kw in ["招待", "宴请", "礼品", "送礼", "接待"]):
         return "entertainment"
-    if any(kw in text for kw in ["快递", "物流", "运输", "配送", "发货", "邮寄"]):
+    if any(kw in text for kw in ["快递", "物流", "运输", "配送", "发货", "邮寄", "运费", "货运"]):
         return "logistics"
 
     return "other"

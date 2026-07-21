@@ -357,11 +357,12 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 import { parseDocumentWithAI } from '@/api/document'
 import { confirmAiInvoiceImport, previewAiInvoiceImport } from '@/api/invoice'
+import { getExpenseCategories } from '@/api/expense'
 
 const props = defineProps({
   modelValue: {
@@ -389,22 +390,7 @@ const paymentMethods = [
   { label: '微信', value: 'wechat' },
 ]
 
-const expenseCategories = [
-  { label: '餐饮', value: 'catering' },
-  { label: '差旅', value: 'travel' },
-  { label: '采购', value: 'procurement' },
-  { label: '办公', value: 'office' },
-  { label: '房租', value: 'rent' },
-  { label: '水电', value: 'utilities' },
-  { label: '工资', value: 'salary' },
-  { label: '市场推广', value: 'marketing' },
-  { label: '软件服务', value: 'software' },
-  { label: '维修维护', value: 'maintenance' },
-  { label: '培训', value: 'training' },
-  { label: '业务招待', value: 'entertainment' },
-  { label: '物流快递', value: 'logistics' },
-  { label: '其他', value: 'other' },
-]
+const expenseCategories = ref([])
 
 const form = reactive({
   invoice_code: '',
@@ -552,6 +538,15 @@ const resetState = () => {
   createIncome.value = false
   createExpense.value = false
 }
+
+onMounted(async () => {
+  try {
+    const res = await getExpenseCategories()
+    expenseCategories.value = res || []
+  } catch (error) {
+    console.error('加载费用分类失败:', error)
+  }
+})
 
 const buildLegacyPreview = (aiResult) => {
   const data = aiResult?.data || {}

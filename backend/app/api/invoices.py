@@ -40,7 +40,7 @@ from app.schemas.receivable import PaymentRecordCreate, PaymentRecordResponse, R
 from app.api.auth import require_menu_permission, require_any_menu_permission
 from app.schemas.setting import SettingKeys
 from app.services.ai_parser import ai_service
-from app.utils.helpers import clean_text, to_decimal, to_date, normalize_party_name, normalize_tax_rate, build_invoice_remark
+from app.utils.helpers import clean_text, to_decimal, to_date, normalize_party_name, normalize_tax_rate, build_invoice_remark, recommend_expense_category
 
 router = APIRouter()
 SUPPORTED_INVOICE_EXTENSIONS = ["pdf", "jpg", "jpeg", "png"]
@@ -52,27 +52,6 @@ def _normalize_invoice_kind(value: Optional[str]) -> InvoiceType:
     if "special" in text or "专" in text:
         return InvoiceType.SPECIAL
     return InvoiceType.NORMAL
-
-
-def _recommend_expense_category(*texts: Optional[str]) -> str:
-    combined = " ".join(filter(None, [clean_text(item) for item in texts])).lower()
-    rules = {
-        "software": ["云", "软件", "订阅", "license", "saas", "系统", "平台", "技术服务"],
-        "procurement": ["采购", "设备", "材料", "耗材", "货物", "器材"],
-        "travel": ["机票", "酒店", "差旅", "出行", "车票"],
-        "logistics": ["物流", "快递", "运费", "货运", "运输"],
-        "marketing": ["推广", "广告", "宣传", "投放"],
-        "office": ["办公", "文具", "打印", "耗材"],
-        "maintenance": ["维护", "维修", "保养"],
-        "training": ["培训", "课程"],
-        "rent": ["房租", "租赁", "租金"],
-        "utilities": ["水费", "电费", "燃气", "物业"],
-        "entertainment": ["招待", "宴请", "餐饮", "接待"],
-    }
-    for category, keywords in rules.items():
-        if any(keyword in combined for keyword in keywords):
-            return category
-    return "other"
 
 
 async def _load_ai_config(db: AsyncSession) -> None:
@@ -500,7 +479,7 @@ async def preview_ai_invoice_import(
             tax_amount=tax_amount,
             total_amount=to_decimal(invoice_draft.total_amount or invoice_draft.amount),
             expense_date=invoice_draft.issue_date or date.today(),
-            expense_category=_recommend_expense_category(invoice_draft.seller_name, invoice_draft.remark),
+            expense_category=recommend_expense_category(invoice_draft.seller_name, invoice_draft.remark),
             payment_method="bank_transfer",
             remark=build_invoice_remark(invoice_draft.invoice_no, "AI录入进项发票自动创建支出"),
         )

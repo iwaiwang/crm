@@ -1,8 +1,9 @@
 """支出管理 API"""
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
-from typing import Optional
+from typing import Optional, List
 from datetime import date
 
 from app.database import get_db
@@ -11,7 +12,9 @@ from app.models.customer import Customer
 from app.models.invoice import Invoice
 from app.models.contract import Contract
 from app.models.user import User
+from app.models.setting import Setting
 from app.schemas.expense import ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseListResponse, ExpenseStats, EXPENSE_CATEGORY_LABELS
+from app.schemas.setting import SettingKeys
 from app.api.auth import require_menu_permission
 
 router = APIRouter()
@@ -188,3 +191,21 @@ async def get_expense_stats(
         by_month=by_month,
         by_year={year: float(total_amount)}
     )
+
+
+@router.get("/categories/list", response_model=List[dict])
+async def get_expense_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('cashflow')),
+):
+    """获取支出费用分类列表（从系统设置读取）"""
+    result = await db.execute(
+        select(Setting.value).where(Setting.key == SettingKeys.REIMBURSEMENT_EXPENSE_CATEGORIES)
+    )
+    value = result.scalar_one_or_none()
+    if value:
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return [{"value": k, "label": v} for k, v in EXPENSE_CATEGORY_LABELS.items()]

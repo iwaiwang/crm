@@ -29,3 +29,8 @@ export function deleteExpense(id) {
 export function getExpenseStats(params) {
   return request.get('/expenses/stats/overview', { params })
 }
+
+// 获取费用分类列表
+export function getExpenseCategories() {
+  return request.get('/expenses/categories/list')
+}
