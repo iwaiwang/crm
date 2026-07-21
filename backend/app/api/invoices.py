@@ -1,7 +1,7 @@
 """发票管理 API"""
 import os
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -40,66 +40,22 @@ from app.schemas.receivable import PaymentRecordCreate, PaymentRecordResponse, R
 from app.api.auth import require_menu_permission, require_any_menu_permission
 from app.schemas.setting import SettingKeys
 from app.services.ai_parser import ai_service
+from app.utils.helpers import clean_text, to_decimal, to_date, normalize_party_name, normalize_tax_rate, build_invoice_remark
 
 router = APIRouter()
 SUPPORTED_INVOICE_EXTENSIONS = ["pdf", "jpg", "jpeg", "png"]
 PAYMENT_METHOD_OPTIONS = {"bank_transfer", "check", "cash", "alipay", "wechat"}
 
 
-def _clean_text(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    cleaned = str(value).strip()
-    return cleaned or None
-
-
-def _to_decimal(value, default: str = "0") -> Decimal:
-    if value in (None, ""):
-        return Decimal(default)
-    cleaned = str(value).replace(",", "").replace("¥", "").replace("楼", "").replace("%", "").strip()
-    try:
-        return Decimal(cleaned)
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal(default)
-
-
-def _to_date(value) -> Optional[date]:
-    if not value:
-        return None
-    if isinstance(value, date):
-        return value
-    cleaned = str(value).strip()
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
-        try:
-            return datetime.strptime(cleaned, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _normalize_party_name(value: Optional[str]) -> str:
-    normalized = _clean_text(value) or ""
-    for token in ["（", "）", "(", ")", "有限责任公司", "有限公司", "股份有限公司", "公司", " ", "\u3000"]:
-        normalized = normalized.replace(token, "")
-    return normalized.lower()
-
-
-def _normalize_tax_rate(value) -> Decimal:
-    rate = _to_decimal(value)
-    if rate > 1:
-        rate = (rate / Decimal("100")).quantize(Decimal("0.0001"))
-    return rate
-
-
 def _normalize_invoice_kind(value: Optional[str]) -> InvoiceType:
-    text = (_clean_text(value) or "").lower()
+    text = (clean_text(value) or "").lower()
     if "special" in text or "专" in text:
         return InvoiceType.SPECIAL
     return InvoiceType.NORMAL
 
 
 def _recommend_expense_category(*texts: Optional[str]) -> str:
-    combined = " ".join(filter(None, [_clean_text(item) for item in texts])).lower()
+    combined = " ".join(filter(None, [clean_text(item) for item in texts])).lower()
     rules = {
         "software": ["云", "软件", "订阅", "license", "saas", "系统", "平台", "技术服务"],
         "procurement": ["采购", "设备", "材料", "耗材", "货物", "器材"],
@@ -147,8 +103,8 @@ async def _load_company_info(db: AsyncSession) -> dict:
     )
     company_info = {setting.key: setting.value for setting in result.scalars().all()}
     return {
-        "company_name": _clean_text(company_info.get(SettingKeys.COMPANY_NAME)) or app_settings.COMPANY_NAME,
-        "company_tax_id": _clean_text(company_info.get(SettingKeys.COMPANY_TAX_ID)) or app_settings.COMPANY_TAX_ID,
+        "company_name": clean_text(company_info.get(SettingKeys.COMPANY_NAME)) or app_settings.COMPANY_NAME,
+        "company_tax_id": clean_text(company_info.get(SettingKeys.COMPANY_TAX_ID)) or app_settings.COMPANY_TAX_ID,
     }
 
 
@@ -172,12 +128,12 @@ async def _infer_invoice_direction(
     company_tax_id: Optional[str],
     db: AsyncSession,
 ) -> InvoiceDirectionType:
-    normalized_company_name = _normalize_party_name(company_name)
-    normalized_buyer = _normalize_party_name(buyer_name)
-    normalized_seller = _normalize_party_name(seller_name)
-    cleaned_company_tax_id = _clean_text(company_tax_id)
-    cleaned_buyer_tax_id = _clean_text(buyer_tax_id)
-    cleaned_seller_tax_id = _clean_text(seller_tax_id)
+    normalized_company_name = normalize_party_name(company_name)
+    normalized_buyer = normalize_party_name(buyer_name)
+    normalized_seller = normalize_party_name(seller_name)
+    cleaned_company_tax_id = clean_text(company_tax_id)
+    cleaned_buyer_tax_id = clean_text(buyer_tax_id)
+    cleaned_seller_tax_id = clean_text(seller_tax_id)
 
     if cleaned_company_tax_id and cleaned_seller_tax_id and cleaned_company_tax_id == cleaned_seller_tax_id:
         return InvoiceDirectionType.SALES
@@ -194,7 +150,7 @@ async def _infer_invoice_direction(
             result = await db.execute(
                 select(Customer.name).where(Customer.name.isnot(None))
             )
-            known_names = {_normalize_party_name(name) for (name,) in result.all() if name}
+            known_names = {normalize_party_name(name) for (name,) in result.all() if name}
             if normalized_buyer and normalized_buyer in known_names:
                 return InvoiceDirectionType.SALES
             if normalized_seller and normalized_seller in known_names:
@@ -207,7 +163,7 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
     if invoice.invoice_type != InvoiceDirectionType.SALES:
         return []
 
-    target_customer_name = _clean_text(invoice.buyer_name)
+    target_customer_name = clean_text(invoice.buyer_name)
     if not target_customer_name:
         return []
 
@@ -217,8 +173,8 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
         .order_by(Contract.created_at.desc())
     )
     contracts = result.scalars().all()
-    normalized_target = _normalize_party_name(target_customer_name)
-    total_amount = _to_decimal(invoice.total_amount or invoice.amount)
+    normalized_target = normalize_party_name(target_customer_name)
+    total_amount = to_decimal(invoice.total_amount or invoice.amount)
     matches: List[AiInvoiceContractMatch] = []
 
     for contract in contracts:
@@ -228,7 +184,7 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
 
         score = 0.0
         reasons: List[str] = []
-        normalized_customer = _normalize_party_name(customer_name)
+        normalized_customer = normalize_party_name(customer_name)
         if normalized_customer and normalized_customer == normalized_target:
             score += 70
             reasons.append("客户名称精确匹配")
@@ -239,7 +195,7 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
             continue
 
         if total_amount > 0:
-            contract_amount = _to_decimal(contract.amount)
+            contract_amount = to_decimal(contract.amount)
             amount_diff = abs(contract_amount - total_amount)
             if amount_diff == 0:
                 score += 20
@@ -255,7 +211,7 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
 
             unpaid_candidates = []
             for receivable in contract.receivables:
-                unpaid_amount = _to_decimal(receivable.amount) - _to_decimal(receivable.received_amount)
+                unpaid_amount = to_decimal(receivable.amount) - to_decimal(receivable.received_amount)
                 if unpaid_amount > 0:
                     unpaid_candidates.append(unpaid_amount)
             if unpaid_candidates:
@@ -275,7 +231,7 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
                 contract_name=contract.name,
                 customer_id=contract.customer_id,
                 customer_name=customer_name,
-                amount=_to_decimal(contract.amount),
+                amount=to_decimal(contract.amount),
                 score=round(score, 2),
                 reason="，".join(reasons) if reasons else None,
             )
@@ -285,8 +241,8 @@ async def _match_contracts_for_invoice(*, invoice: AiInvoiceDraft, db: AsyncSess
 
 
 def _build_receivable_match(receivable: Receivable, invoice_total: Decimal) -> AiInvoiceReceivableMatch:
-    amount = _to_decimal(receivable.amount)
-    received_amount = _to_decimal(receivable.received_amount)
+    amount = to_decimal(receivable.amount)
+    received_amount = to_decimal(receivable.received_amount)
     unpaid_amount = amount - received_amount
     score = 0.0
     reasons: List[str] = []
@@ -319,7 +275,7 @@ def _build_receivable_match(receivable: Receivable, invoice_total: Decimal) -> A
         received_amount=received_amount,
         unpaid_amount=unpaid_amount if unpaid_amount > 0 else Decimal("0"),
         status=receivable.status,
-        remark=_clean_text(receivable.remark),
+        remark=clean_text(receivable.remark),
         score=round(score, 2),
         reason="，".join(reasons) if reasons else None,
     )
@@ -342,18 +298,9 @@ async def _match_receivables_for_invoice(
     matches = [
         _build_receivable_match(receivable, invoice_total)
         for receivable in receivables
-        if (_to_decimal(receivable.amount) - _to_decimal(receivable.received_amount)) > 0
+        if (to_decimal(receivable.amount) - to_decimal(receivable.received_amount)) > 0
     ]
-    return sorted(matches, key=lambda item: item.score, reverse=True)[:5]
-
-
-def _build_invoice_remark(invoice_no: Optional[str], prefix: str) -> str:
-    if invoice_no:
-        return f"{prefix}，发票号：{invoice_no}"
-    return prefix
-
-
-# 注意：check-duplicate 必须放在 /{invoice_id} 之前，否则会被当作 invoice_id 匹配
+    return sorted(matches, key=lambda item: item.score, reverse=True)[:5]# 注意：check-duplicate 必须放在 /{invoice_id} 之前，否则会被当作 invoice_id 匹配
 # 使用 /actions/check-duplicate 避免与 /{invoice_id} 冲突
 @router.get("/actions/check-duplicate")
 async def check_invoice_duplicate(
@@ -458,33 +405,33 @@ async def preview_ai_invoice_import(
         raise HTTPException(status_code=500, detail=f"AI 解析发票失败: {exc}") from exc
 
     parsed_data = ai_result.get("data") or {}
-    invoice_no = _clean_text(parsed_data.get("invoice_no") or parsed_data.get("invoice_number"))
-    issue_date = _to_date(parsed_data.get("issue_date") or parsed_data.get("invoice_date"))
-    amount = _to_decimal(parsed_data.get("amount"))
-    total_amount = _to_decimal(parsed_data.get("total_amount") or parsed_data.get("amount"))
-    tax_amount = _to_decimal(parsed_data.get("tax_amount"), "0")
+    invoice_no = clean_text(parsed_data.get("invoice_no") or parsed_data.get("invoice_number"))
+    issue_date = to_date(parsed_data.get("issue_date") or parsed_data.get("invoice_date"))
+    amount = to_decimal(parsed_data.get("amount"))
+    total_amount = to_decimal(parsed_data.get("total_amount") or parsed_data.get("amount"))
+    tax_amount = to_decimal(parsed_data.get("tax_amount"), "0")
     if total_amount <= 0 and amount > 0:
         total_amount = amount + tax_amount
 
     invoice_draft = AiInvoiceDraft(
-        invoice_code=_clean_text(parsed_data.get("invoice_code")),
-        invoice_number=_clean_text(parsed_data.get("invoice_number")),
-        check_code=_clean_text(parsed_data.get("check_code")),
-        invoice_date=_to_date(parsed_data.get("invoice_date")),
+        invoice_code=clean_text(parsed_data.get("invoice_code")),
+        invoice_number=clean_text(parsed_data.get("invoice_number")),
+        check_code=clean_text(parsed_data.get("check_code")),
+        invoice_date=to_date(parsed_data.get("invoice_date")),
         invoice_no=invoice_no,
         amount=amount,
-        tax_rate=_normalize_tax_rate(parsed_data.get("tax_rate")),
+        tax_rate=normalize_tax_rate(parsed_data.get("tax_rate")),
         tax_amount=tax_amount,
         total_amount=total_amount,
         type=_normalize_invoice_kind(parsed_data.get("invoice_type")),
-        buyer_name=_clean_text(parsed_data.get("buyer_name")),
-        buyer_tax_id=_clean_text(parsed_data.get("buyer_tax_id")),
-        seller_name=_clean_text(parsed_data.get("seller_name")),
-        seller_tax_id=_clean_text(parsed_data.get("seller_tax_id")),
+        buyer_name=clean_text(parsed_data.get("buyer_name")),
+        buyer_tax_id=clean_text(parsed_data.get("buyer_tax_id")),
+        seller_name=clean_text(parsed_data.get("seller_name")),
+        seller_tax_id=clean_text(parsed_data.get("seller_tax_id")),
         issue_date=issue_date,
         due_date=issue_date,
         status="normal",
-        remark=_clean_text(parsed_data.get("remarks")),
+        remark=clean_text(parsed_data.get("remarks")),
         file_id=payload.file_id,
         file_url=file_url,
         ai_parsed=True,
@@ -506,7 +453,7 @@ async def preview_ai_invoice_import(
 
     receivable_matches = await _match_receivables_for_invoice(
         contract_id=invoice_draft.contract_id,
-        invoice_total=_to_decimal(invoice_draft.total_amount or invoice_draft.amount),
+        invoice_total=to_decimal(invoice_draft.total_amount or invoice_draft.amount),
         db=db,
     )
 
@@ -519,21 +466,21 @@ async def preview_ai_invoice_import(
         payment_amount = (
             receivable_matches[0].unpaid_amount
             if receivable_matches and receivable_matches[0].unpaid_amount > 0
-            else _to_decimal(invoice_draft.total_amount or invoice_draft.amount)
+            else to_decimal(invoice_draft.total_amount or invoice_draft.amount)
         )
         recommended_payment = AiInvoicePaymentDraft(
             receivable_id=receivable_matches[0].receivable_id if receivable_matches else None,
             amount=payment_amount,
             payment_date=invoice_draft.issue_date or date.today(),
             payment_method="bank_transfer",
-            remark=_build_invoice_remark(invoice_draft.invoice_no, "AI录入销项发票同步登记收款"),
+            remark=build_invoice_remark(invoice_draft.invoice_no, "AI录入销项发票同步登记收款"),
         )
         recommended_income = AiInvoiceIncomeDraft(
-            amount=payment_amount if payment_amount > 0 else _to_decimal(invoice_draft.total_amount or invoice_draft.amount),
+            amount=payment_amount if payment_amount > 0 else to_decimal(invoice_draft.total_amount or invoice_draft.amount),
             income_date=invoice_draft.issue_date or date.today(),
             income_category="sales",
             payment_method="bank_transfer",
-            remark=_build_invoice_remark(invoice_draft.invoice_no, "AI录入销项发票自动创建收入"),
+            remark=build_invoice_remark(invoice_draft.invoice_no, "AI录入销项发票自动创建收入"),
         )
         suggested_actions.append("将创建 1 条收入")
         if recommended_payment.receivable_id:
@@ -551,11 +498,11 @@ async def preview_ai_invoice_import(
             contract_id=None,
             amount=amount,
             tax_amount=tax_amount,
-            total_amount=_to_decimal(invoice_draft.total_amount or invoice_draft.amount),
+            total_amount=to_decimal(invoice_draft.total_amount or invoice_draft.amount),
             expense_date=invoice_draft.issue_date or date.today(),
             expense_category=_recommend_expense_category(invoice_draft.seller_name, invoice_draft.remark),
             payment_method="bank_transfer",
-            remark=_build_invoice_remark(invoice_draft.invoice_no, "AI录入进项发票自动创建支出"),
+            remark=build_invoice_remark(invoice_draft.invoice_no, "AI录入进项发票自动创建支出"),
         )
         suggested_actions.append("将创建 1 条支出")
 
@@ -581,7 +528,7 @@ async def confirm_ai_invoice_import(
     company_info = await _load_company_info(db)
     invoice_data = payload.invoice
 
-    if not _clean_text(invoice_data.invoice_no):
+    if not clean_text(invoice_data.invoice_no):
         raise HTTPException(status_code=400, detail="发票号码不能为空")
 
     duplicate_result = await db.execute(select(Invoice).where(Invoice.invoice_no == invoice_data.invoice_no))
@@ -594,10 +541,10 @@ async def confirm_ai_invoice_import(
             raise HTTPException(status_code=400, detail="关联合同不存在")
 
     invoice_type = invoice_data.invoice_type or InvoiceDirectionType.SALES
-    buyer_name = _clean_text(invoice_data.buyer_name)
-    buyer_tax_id = _clean_text(invoice_data.buyer_tax_id)
-    seller_name = _clean_text(invoice_data.seller_name)
-    seller_tax_id = _clean_text(invoice_data.seller_tax_id)
+    buyer_name = clean_text(invoice_data.buyer_name)
+    buyer_tax_id = clean_text(invoice_data.buyer_tax_id)
+    seller_name = clean_text(invoice_data.seller_name)
+    seller_tax_id = clean_text(invoice_data.seller_tax_id)
 
     # 自动补填本公司信息
     if invoice_type == InvoiceDirectionType.PURCHASE and not buyer_name:
@@ -608,26 +555,26 @@ async def confirm_ai_invoice_import(
         seller_tax_id = company_info.get("company_tax_id")
 
     invoice_payload = InvoiceCreate(
-        invoice_code=_clean_text(invoice_data.invoice_code),
-        invoice_number=_clean_text(invoice_data.invoice_number),
-        check_code=_clean_text(invoice_data.check_code),
-        invoice_date=_to_date(invoice_data.invoice_date),
+        invoice_code=clean_text(invoice_data.invoice_code),
+        invoice_number=clean_text(invoice_data.invoice_number),
+        check_code=clean_text(invoice_data.check_code),
+        invoice_date=to_date(invoice_data.invoice_date),
         invoice_no=invoice_data.invoice_no.strip(),
         contract_id=invoice_data.contract_id,
-        amount=_to_decimal(invoice_data.amount),
-        tax_rate=_normalize_tax_rate(invoice_data.tax_rate),
-        tax_amount=_to_decimal(invoice_data.tax_amount, "0"),
-        total_amount=_to_decimal(invoice_data.total_amount or invoice_data.amount),
+        amount=to_decimal(invoice_data.amount),
+        tax_rate=normalize_tax_rate(invoice_data.tax_rate),
+        tax_amount=to_decimal(invoice_data.tax_amount, "0"),
+        total_amount=to_decimal(invoice_data.total_amount or invoice_data.amount),
         type=invoice_data.type or InvoiceType.NORMAL,
         invoice_type=invoice_type,
         buyer_name=buyer_name,
         buyer_tax_id=buyer_tax_id,
         seller_name=seller_name,
         seller_tax_id=seller_tax_id,
-        issue_date=_to_date(invoice_data.issue_date),
-        due_date=_to_date(invoice_data.due_date or invoice_data.issue_date),
+        issue_date=to_date(invoice_data.issue_date),
+        due_date=to_date(invoice_data.due_date or invoice_data.issue_date),
         status=invoice_data.status or "normal",
-        remark=_clean_text(invoice_data.remark),
+        remark=clean_text(invoice_data.remark),
         file_id=invoice_data.file_id,
         file_url=invoice_data.file_url,
         ai_parsed=bool(invoice_data.ai_parsed),
@@ -653,8 +600,8 @@ async def confirm_ai_invoice_import(
             if not db_receivable:
                 raise HTTPException(status_code=404, detail="关联应收不存在")
 
-            payment_amount = _to_decimal(payment_data.amount)
-            unpaid_amount = _to_decimal(db_receivable.amount) - _to_decimal(db_receivable.received_amount)
+            payment_amount = to_decimal(payment_data.amount)
+            unpaid_amount = to_decimal(db_receivable.amount) - to_decimal(db_receivable.received_amount)
             if payment_amount <= 0:
                 raise HTTPException(status_code=400, detail="收款金额必须大于 0")
             if unpaid_amount > 0 and payment_amount > unpaid_amount:
@@ -663,39 +610,39 @@ async def confirm_ai_invoice_import(
             created_payment = PaymentRecord(
                 receivable_id=db_receivable.id,
                 amount=payment_amount,
-                payment_date=_to_date(payment_data.payment_date) or date.today(),
+                payment_date=to_date(payment_data.payment_date) or date.today(),
                 payment_method=payment_data.payment_method if payment_data.payment_method in PAYMENT_METHOD_OPTIONS else "bank_transfer",
-                remark=_clean_text(payment_data.remark),
+                remark=clean_text(payment_data.remark),
             )
             db.add(created_payment)
             await db.flush()
             created_payment.invoice.append(db_invoice)
 
-            db_receivable.received_amount = _to_decimal(db_receivable.received_amount) + payment_amount
-            if _to_decimal(db_receivable.received_amount) >= _to_decimal(db_receivable.amount):
+            db_receivable.received_amount = to_decimal(db_receivable.received_amount) + payment_amount
+            if to_decimal(db_receivable.received_amount) >= to_decimal(db_receivable.amount):
                 db_receivable.status = "paid"
-            elif _to_decimal(db_receivable.received_amount) > 0:
+            elif to_decimal(db_receivable.received_amount) > 0:
                 db_receivable.status = "partial"
 
         if payload.create_income and invoice_payload.invoice_type == InvoiceDirectionType.SALES:
             income_data = payload.income or AiInvoiceIncomeDraft()
-            income_amount = _to_decimal(income_data.amount)
+            income_amount = to_decimal(income_data.amount)
             if income_amount <= 0:
-                income_amount = _to_decimal(created_payment.amount if created_payment else invoice_payload.total_amount)
-            resolved_income_date = _to_date(income_data.income_date) or invoice_payload.issue_date or date.today()
+                income_amount = to_decimal(created_payment.amount if created_payment else invoice_payload.total_amount)
+            resolved_income_date = to_date(income_data.income_date) or invoice_payload.issue_date or date.today()
             created_income = Income(
                 source_type="invoice",
                 source_id=db_invoice.id,
                 invoice_id=db_invoice.id,
                 payment_record_id=created_payment.id if created_payment else None,
                 customer_id=None,
-                customer_name=_clean_text(invoice_payload.buyer_name),
+                customer_name=clean_text(invoice_payload.buyer_name),
                 amount=income_amount,
                 income_date=resolved_income_date,
                 income_year=str(resolved_income_date.year),
                 income_category=income_data.income_category or "sales",
                 payment_method=income_data.payment_method if income_data.payment_method in PAYMENT_METHOD_OPTIONS else (created_payment.payment_method if created_payment else None),
-                remark=_clean_text(income_data.remark) or _build_invoice_remark(invoice_payload.invoice_no, "AI录入销项发票自动创建收入"),
+                remark=clean_text(income_data.remark) or build_invoice_remark(invoice_payload.invoice_no, "AI录入销项发票自动创建收入"),
                 file_id=invoice_payload.file_id,
                 file_url=invoice_payload.file_url,
             )
@@ -703,15 +650,15 @@ async def confirm_ai_invoice_import(
 
         if payload.create_expense and invoice_payload.invoice_type == InvoiceDirectionType.PURCHASE:
             expense_data = payload.expense or AiInvoiceExpenseDraft()
-            resolved_expense_date = _to_date(expense_data.expense_date) or invoice_payload.issue_date or date.today()
+            resolved_expense_date = to_date(expense_data.expense_date) or invoice_payload.issue_date or date.today()
             created_expense = Expense(
                 supplier_id=expense_data.supplier_id,
-                supplier_name=_clean_text(expense_data.supplier_name) or _clean_text(invoice_payload.seller_name),
+                supplier_name=clean_text(expense_data.supplier_name) or clean_text(invoice_payload.seller_name),
                 invoice_id=db_invoice.id,
                 contract_id=expense_data.contract_id,
-                amount=_to_decimal(expense_data.amount or invoice_payload.amount),
-                tax_amount=_to_decimal(expense_data.tax_amount or invoice_payload.tax_amount, "0"),
-                total_amount=_to_decimal(expense_data.total_amount or invoice_payload.total_amount),
+                amount=to_decimal(expense_data.amount or invoice_payload.amount),
+                tax_amount=to_decimal(expense_data.tax_amount or invoice_payload.tax_amount, "0"),
+                total_amount=to_decimal(expense_data.total_amount or invoice_payload.total_amount),
                 expense_date=resolved_expense_date,
                 expense_year=str(resolved_expense_date.year),
                 expense_category=expense_data.expense_category or "other",
@@ -721,7 +668,7 @@ async def confirm_ai_invoice_import(
                 ai_parsed=bool(invoice_payload.ai_parsed),
                 parsed_at=invoice_payload.parsed_at,
                 parse_confidence=invoice_payload.parse_confidence,
-                remark=_clean_text(expense_data.remark) or _build_invoice_remark(invoice_payload.invoice_no, "AI录入进项发票自动创建支出"),
+                remark=clean_text(expense_data.remark) or build_invoice_remark(invoice_payload.invoice_no, "AI录入进项发票自动创建支出"),
             )
             db.add(created_expense)
 

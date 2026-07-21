@@ -18,6 +18,7 @@ from app.schemas.setting import (
 )
 from app.api.auth import require_menu_permission
 from app.config import settings
+from app.schemas.reimbursement import EXPENSE_CATEGORY_OPTIONS
 
 router = APIRouter()
 
@@ -48,22 +49,7 @@ DEFAULT_SETTINGS = {
     SettingKeys.REIMBURSEMENT_DEFAULT_PAYER_ID: {"value": "", "value_type": "string", "description": "默认报销支付确认人", "is_public": False},
     SettingKeys.REIMBURSEMENT_PAYER_COMPANIES: {"value": "[]", "value_type": "json", "description": "报销支付方公司名称列表", "is_public": True},
     SettingKeys.REIMBURSEMENT_EXPENSE_CATEGORIES: {
-        "value": json.dumps([
-            {"value": "catering", "label": "餐饮"},
-            {"value": "travel", "label": "差旅"},
-            {"value": "procurement", "label": "采购"},
-            {"value": "office", "label": "办公"},
-            {"value": "rent", "label": "房租"},
-            {"value": "utilities", "label": "水电"},
-            {"value": "salary", "label": "工资"},
-            {"value": "marketing", "label": "市场推广"},
-            {"value": "software", "label": "软件服务"},
-            {"value": "maintenance", "label": "维修维护"},
-            {"value": "training", "label": "培训"},
-            {"value": "entertainment", "label": "业务招待"},
-            {"value": "logistics", "label": "物流快递"},
-            {"value": "other", "label": "其他"},
-        ]),
+        "value": json.dumps(EXPENSE_CATEGORY_OPTIONS),
         "value_type": "json",
         "description": "报销费用分类列表",
         "is_public": True,

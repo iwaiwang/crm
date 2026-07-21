@@ -66,6 +66,10 @@ REIMBURSEMENT_CATEGORY_LABELS = {
     "other": "其他",
 }
 
+EXPENSE_CATEGORY_OPTIONS = [
+    {"value": k, "label": v} for k, v in REIMBURSEMENT_CATEGORY_LABELS.items()
+]
+
 
 # 状态中文映射
 REIMBURSEMENT_STATUS_LABELS = {

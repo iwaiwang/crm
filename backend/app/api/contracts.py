@@ -33,41 +33,11 @@ from app.schemas.contract import (
     ContractUpdate,
 )
 from app.services.ai_parser import ai_service
+from app.utils.helpers import clean_text, to_decimal, to_date
 
 router = APIRouter()
 
 SUPPORTED_CONTRACT_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "gif", "bmp", "webp"]
-
-
-def _clean_text(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    cleaned = str(value).strip()
-    return cleaned or None
-
-
-def _to_decimal(value, default: str = "0") -> Decimal:
-    if value in (None, ""):
-        return Decimal(default)
-    cleaned = str(value).replace(",", "").replace("￥", "").replace("¥", "").strip()
-    try:
-        return Decimal(cleaned)
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal(default)
-
-
-def _to_date(value) -> Optional[date]:
-    if not value:
-        return None
-    if isinstance(value, date):
-        return value
-    cleaned = str(value).strip()
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
-        try:
-            return datetime.strptime(cleaned, fmt).date()
-        except ValueError:
-            continue
-    return None
 
 
 def _generate_contract_no() -> str:
@@ -75,7 +45,7 @@ def _generate_contract_no() -> str:
 
 
 def _resolve_receivable_due_date(raw_due_date, contract_start_date: Optional[date]) -> date:
-    parsed_due_date = _to_date(raw_due_date)
+    parsed_due_date = to_date(raw_due_date)
     if parsed_due_date:
         return parsed_due_date
     if contract_start_date:
@@ -114,7 +84,7 @@ async def _load_ai_config(db: AsyncSession) -> None:
 
 
 async def _match_customer(customer_name: Optional[str], db: AsyncSession) -> tuple[Optional[Customer], List[str]]:
-    cleaned_name = _clean_text(customer_name)
+    cleaned_name = clean_text(customer_name)
     if not cleaned_name:
         return None, []
 
@@ -137,7 +107,7 @@ async def _match_customer(customer_name: Optional[str], db: AsyncSession) -> tup
 
 
 def _can_auto_create_customer(customer_name: Optional[str]) -> bool:
-    cleaned_name = _clean_text(customer_name)
+    cleaned_name = clean_text(customer_name)
     if not cleaned_name or len(cleaned_name) < 4:
         return False
 
@@ -173,7 +143,7 @@ async def _get_or_create_customer(
     if matched_customer:
         return matched_customer
 
-    cleaned_name = _clean_text(customer_name)
+    cleaned_name = clean_text(customer_name)
     if not _can_auto_create_customer(cleaned_name):
         raise HTTPException(status_code=400, detail="未匹配到客户，请补充明确的客户名称或手动选择")
 
@@ -225,7 +195,7 @@ async def _ensure_contract_file(
     contract_file = ContractFile(
         contract_id=contract_id,
         file_id=uploaded_file_id,
-        file_name=_clean_text(preferred_name) or filename,
+        file_name=clean_text(preferred_name) or filename,
         file_path=file_path,
         file_url=file_url,
         file_type=file_type,
@@ -264,7 +234,7 @@ async def _promote_next_primary_file(*, db: AsyncSession, contract_id: str) -> N
 
 def _build_receivable_plan(payment_terms: Optional[str], total_amount: Decimal) -> List[AiReceivableDraft]:
     normalized_amount = total_amount if total_amount > 0 else Decimal("0")
-    cleaned_terms = _clean_text(payment_terms)
+    cleaned_terms = clean_text(payment_terms)
     if normalized_amount <= 0:
         return []
 
@@ -418,7 +388,7 @@ async def create_contract(contract: ContractCreate, db: AsyncSession = Depends(g
         raise HTTPException(status_code=400, detail="客户不存在")
 
     # 编号为空时自动生成
-    contract_no = _clean_text(contract.contract_no) or _generate_contract_no()
+    contract_no = clean_text(contract.contract_no) or _generate_contract_no()
     payload = contract.model_dump(exclude={"file_id", "file_url", "contract_no"})
     payload["contract_no"] = contract_no
     db_contract = Contract(**payload)
@@ -463,22 +433,22 @@ async def preview_ai_contract_import(
 
     parsed_data = ai_result.get("data") or {}
     confidence = ai_result.get("confidence")
-    customer_name = _clean_text(parsed_data.get("customer_name"))
+    customer_name = clean_text(parsed_data.get("customer_name"))
     matched_customer, matching_names = await _match_customer(customer_name, db)
 
-    amount = _to_decimal(parsed_data.get("amount"))
+    amount = to_decimal(parsed_data.get("amount"))
     contract_draft = AiContractDraft(
-        contract_no=_clean_text(parsed_data.get("contract_no")) or _generate_contract_no(),
-        name=_clean_text(parsed_data.get("contract_name")) or "AI 导入合同",
+        contract_no=clean_text(parsed_data.get("contract_no")) or _generate_contract_no(),
+        name=clean_text(parsed_data.get("contract_name")) or "AI 导入合同",
         customer_id=matched_customer.id if matched_customer else None,
         customer_name=customer_name,
         amount=amount,
-        sign_date=_to_date(parsed_data.get("sign_date")),
-        start_date=_to_date(parsed_data.get("start_date")),
-        end_date=_to_date(parsed_data.get("end_date")),
+        sign_date=to_date(parsed_data.get("sign_date")),
+        start_date=to_date(parsed_data.get("start_date")),
+        end_date=to_date(parsed_data.get("end_date")),
         status="signed",
-        payment_terms=_clean_text(parsed_data.get("payment_terms")),
-        remark=_clean_text(parsed_data.get("remarks")),
+        payment_terms=clean_text(parsed_data.get("payment_terms")),
+        remark=clean_text(parsed_data.get("remarks")),
         file_id=payload.file_id,
         file_url=file_url,
         ai_parsed=True,
@@ -504,29 +474,29 @@ async def confirm_ai_contract_import(
     contract_data = payload.contract
     customer = await _get_or_create_customer(contract_data.customer_id, contract_data.customer_name, db)
 
-    if not _clean_text(contract_data.contract_no):
+    if not clean_text(contract_data.contract_no):
         contract_data.contract_no = _generate_contract_no()
-    if not _clean_text(contract_data.name):
+    if not clean_text(contract_data.name):
         raise HTTPException(status_code=400, detail="合同名称不能为空")
 
     contract_payload = ContractCreate(
         contract_no=contract_data.contract_no.strip(),
         name=contract_data.name.strip(),
         customer_id=customer.id,
-        amount=_to_decimal(contract_data.amount),
-        sign_date=_to_date(contract_data.sign_date),
-        start_date=_to_date(contract_data.start_date),
-        end_date=_to_date(contract_data.end_date),
+        amount=to_decimal(contract_data.amount),
+        sign_date=to_date(contract_data.sign_date),
+        start_date=to_date(contract_data.start_date),
+        end_date=to_date(contract_data.end_date),
         status=contract_data.status or "signed",
-        payment_terms=_clean_text(contract_data.payment_terms),
-        remark=_clean_text(contract_data.remark),
+        payment_terms=clean_text(contract_data.payment_terms),
+        remark=clean_text(contract_data.remark),
         file_id=contract_data.file_id,
         file_url=contract_data.file_url,
         ai_parsed=bool(contract_data.ai_parsed),
         parsed_at=datetime.now() if contract_data.ai_parsed else None,
         parse_confidence=contract_data.parse_confidence,
     )
-    contract_start_date = _to_date(contract_data.start_date)
+    contract_start_date = to_date(contract_data.start_date)
 
     db_contract = Contract(**contract_payload.model_dump(exclude={"file_id", "file_url"}))
     db.add(db_contract)
@@ -546,7 +516,7 @@ async def confirm_ai_contract_import(
         receivable_payloads = payload.receivables or _build_receivable_plan(contract_payload.payment_terms, contract_payload.amount)
         created_receivables: List[Receivable] = []
         for receivable in receivable_payloads:
-            amount = _to_decimal(receivable.amount)
+            amount = to_decimal(receivable.amount)
             if amount <= 0:
                 continue
             db_receivable = Receivable(
@@ -554,7 +524,7 @@ async def confirm_ai_contract_import(
                 amount=amount,
                 due_date=_resolve_receivable_due_date(receivable.due_date, contract_start_date),
                 status="unpaid",
-                remark=_clean_text(receivable.remark),
+                remark=clean_text(receivable.remark),
             )
             db.add(db_receivable)
             created_receivables.append(db_receivable)
