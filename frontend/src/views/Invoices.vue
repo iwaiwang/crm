@@ -50,9 +50,9 @@
 
       <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="invoice_no" label="发票号码" width="130" />
-        <el-table-column prop="buyer_name" label="购买方" width="150" />
-        <el-table-column prop="seller_name" label="销售方" width="150" />
+        <el-table-column prop="invoice_no" label="发票号码" width="200" />
+        <el-table-column prop="buyer_name" label="购买方" width="200" />
+        <el-table-column prop="seller_name" label="销售方" width="200" />
         <el-table-column prop="total_amount" label="发票金额（含税）" width="120" align="right">
           <template #default="{ row }">¥{{ Number(row.total_amount).toLocaleString() }}</template>
         </el-table-column>
@@ -162,16 +162,16 @@
           </el-select>
         </el-form-item>
         <el-form-item label="购买方" prop="buyer_name">
-          <el-input v-model="formData.buyer_name" :disabled="formData.invoice_type === 'purchase'" placeholder="购买方名称" />
+          <el-input v-model="formData.buyer_name" placeholder="购买方名称" />
         </el-form-item>
         <el-form-item label="购买方税号" prop="buyer_tax_id">
-          <el-input v-model="formData.buyer_tax_id" :disabled="formData.invoice_type === 'purchase'" placeholder="购买方税号" />
+          <el-input v-model="formData.buyer_tax_id" placeholder="购买方税号" />
         </el-form-item>
         <el-form-item label="销售方" prop="seller_name">
-          <el-input v-model="formData.seller_name" :disabled="formData.invoice_type === 'sales'" placeholder="销售方名称" />
+          <el-input v-model="formData.seller_name" placeholder="销售方名称" />
         </el-form-item>
         <el-form-item label="销售方税号" prop="seller_tax_id">
-          <el-input v-model="formData.seller_tax_id" :disabled="formData.invoice_type === 'sales'" placeholder="销售方税号" />
+          <el-input v-model="formData.seller_tax_id" placeholder="销售方税号" />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="formData.remark" type="textarea" :rows="2" />
@@ -320,21 +320,25 @@ const openAddDialog = () => {
   fillCompanyInfo('sales')
 }
 
-// 填充公司信息
+// 填充公司信息（新增时全覆盖，编辑时只补填空的字段）
 const fillCompanyInfo = (invoiceType) => {
-  if (formData.id) return // 编辑模式不填充
   if (!companyInfo.value.company_name) return // 公司信息未加载
 
+  const isEdit = !!formData.id
   if (invoiceType === 'sales') {
-    formData.seller_name = companyInfo.value.company_name
-    formData.seller_tax_id = companyInfo.value.company_tax_id
-    formData.buyer_name = ''
-    formData.buyer_tax_id = ''
+    if (!isEdit || !formData.seller_name) formData.seller_name = companyInfo.value.company_name
+    if (!isEdit || !formData.seller_tax_id) formData.seller_tax_id = companyInfo.value.company_tax_id
+    if (!isEdit) {
+      formData.buyer_name = ''
+      formData.buyer_tax_id = ''
+    }
   } else if (invoiceType === 'purchase') {
-    formData.buyer_name = companyInfo.value.company_name
-    formData.buyer_tax_id = companyInfo.value.company_tax_id
-    formData.seller_name = ''
-    formData.seller_tax_id = ''
+    if (!isEdit || !formData.buyer_name) formData.buyer_name = companyInfo.value.company_name
+    if (!isEdit || !formData.buyer_tax_id) formData.buyer_tax_id = companyInfo.value.company_tax_id
+    if (!isEdit) {
+      formData.seller_name = ''
+      formData.seller_tax_id = ''
+    }
   }
 }
 
@@ -379,6 +383,8 @@ const handleEdit = async (row) => {
     } else {
       fileInfo.value = null
     }
+    // 编辑模式下补填公司信息到空字段
+    fillCompanyInfo(formData.invoice_type)
   } catch (error) {
     console.error('加载发票详情失败:', error)
     ElMessage.error('加载发票详情失败')

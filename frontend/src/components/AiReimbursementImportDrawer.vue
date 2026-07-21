@@ -76,7 +76,21 @@
             <!-- 收款方信息 -->
             <el-divider content-position="left">收款方信息</el-divider>
             <el-form-item label="供应商名称" required>
-              <el-input v-model="form.supplier_name" placeholder="供应商/收款方名称" />
+              <el-autocomplete
+                v-model="form.supplier_name"
+                :fetch-suggestions="fetchSupplierSuggestions"
+                placeholder="输入名称自动补全"
+                @select="handleSupplierSelect"
+                style="width: 100%"
+                clearable
+              >
+                <template #default="{ item }">
+                  <div class="supplier-suggestion">
+                    <span class="supplier-name">{{ item.name }}</span>
+                    <span class="supplier-bank" v-if="item.bank_name">{{ item.bank_name }}</span>
+                  </div>
+                </template>
+              </el-autocomplete>
             </el-form-item>
             <el-form-item label="税号">
               <el-input v-model="form.supplier_tax_id" placeholder="收款方税号" />
@@ -189,6 +203,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 import { previewAiReimbursementImport, confirmAiReimbursementImport, getReimbursementPayerCompanies, getReimbursementExpenseCategories } from '@/api/reimbursement'
+import { searchSuppliers } from '@/api/supplier'
 
 const props = defineProps({
   modelValue: {
@@ -270,6 +285,26 @@ const canConfirm = computed(() => {
   if (!fileInfo.value || !normalizeText(form.supplier_name)) return false
   return true
 })
+
+const fetchSupplierSuggestions = async (queryString, cb) => {
+  if (!queryString) {
+    cb([])
+    return
+  }
+  try {
+    const results = await searchSuppliers(queryString, 10)
+    cb(results)
+  } catch (error) {
+    cb([])
+  }
+}
+
+const handleSupplierSelect = (item) => {
+  form.supplier_name = item.name
+  form.supplier_tax_id = item.tax_id || ''
+  form.supplier_bank_name = item.bank_name || ''
+  form.supplier_bank_account = item.bank_account || ''
+}
 
 const resetState = () => {
   fileInfo.value = null
@@ -374,7 +409,11 @@ const confirmImport = async () => {
       create_supplier: createSupplier.value,
     }
     const result = await confirmAiReimbursementImport(payload)
-    ElMessage.success('AI录入报销单成功')
+    if (result.invoice_reused) {
+      ElMessage.warning('该发票已存在，已关联到已有发票记录')
+    } else {
+      ElMessage.success('AI录入报销单成功')
+    }
     emit('success', result)
     emit('update:modelValue', false)
     resetState()
@@ -548,6 +587,21 @@ watch(
 .footer-actions {
   display: flex;
   gap: 12px;
+}
+
+.supplier-suggestion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.supplier-name {
+  font-weight: 500;
+}
+
+.supplier-bank {
+  font-size: 12px;
+  color: #909399;
 }
 
 @media (max-width: 900px) {

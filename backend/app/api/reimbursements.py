@@ -1,6 +1,8 @@
 """报销管理 API"""
 import os
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
 from sqlalchemy.orm import selectinload
@@ -8,11 +10,14 @@ from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 import json
+from urllib.parse import quote
+from openpyxl import Workbook
 
 from app.database import get_db
 from app.models.reimbursement import Reimbursement
 from app.models.invoice import Invoice
 from app.models.contract import Contract
+from app.models.expense import Expense
 from app.models.user import User
 from app.models.ai_config import AIConfig
 from app.models.setting import Setting
@@ -382,6 +387,108 @@ async def migrate_expense_category(
     return {"message": "迁移成功", "updated": len(reimbursements)}
 
 
+@router.post("/export-batch-payment")
+async def export_batch_payment(
+    ids: List[str] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """导出选中报销单为银行批量支付 Excel 格式"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择要导出的报销单")
+
+    result = await db.execute(
+        select(Reimbursement).where(Reimbursement.id.in_(ids))
+    )
+    reimbursements = result.scalars().all()
+
+    if not reimbursements:
+        raise HTTPException(status_code=404, detail="未找到选中的报销单")
+
+    company_name = await _get_setting_value(db, SettingKeys.COMPANY_NAME) or ""
+    company_bank_name = await _get_setting_value(db, SettingKeys.COMPANY_BANK_NAME) or ""
+    company_bank_account = await _get_setting_value(db, SettingKeys.COMPANY_BANK_ACCOUNT) or ""
+
+    # 预加载收款方信息：收集所有涉及的供应商名称 + 公司自身（作为付款方也查一下）
+    supplier_names = list({r.supplier_name for r in reimbursements if r.supplier_name})
+    if company_name:
+        supplier_names.append(company_name)
+    supplier_map = {}
+    if supplier_names:
+        result = await db.execute(
+            select(Supplier).where(Supplier.name.in_(supplier_names))
+        )
+        for s in result.scalars().all():
+            supplier_map[s.name] = s
+
+    # 付款方信息：优先从收款方表（公司自身）获取，其次用设置
+    payer = supplier_map.get(company_name)
+    payer_bank_name = (payer.bank_name if payer else "") or company_bank_name
+    payer_bank_account = (payer.bank_account if payer else "") or company_bank_account
+    payer_name = company_name
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "批量支付"
+
+    headers = [
+        "币种", "日期", "明细标志", "顺序号",
+        "付款账号开户行", "付款账号/卡号", "付款账号名称/卡名称",
+        "收款账号开户行", "收款账号省份", "收款账号地市", "收款账号地区码",
+        "收款账号", "收款账号名称", "金额",
+        "汇款用途", "备注信息", "汇款方式",
+        "收款账户短信通知手机号码", "自定义序号",
+    ]
+    ws.append(headers)
+
+    today_str = date.today().strftime("%Y%m%d")
+
+    for idx, r in enumerate(reimbursements, 1):
+        s = supplier_map.get(r.supplier_name) if r.supplier_name else None
+
+        bank_name = r.supplier_bank_name or (s.bank_name if s else "") or ""
+        bank_branch = r.supplier_bank_branch or (s.bank_branch if s else "") or ""
+        bank_province = r.supplier_bank_province or (s.bank_province if s else "") or ""
+        bank_city = r.supplier_bank_city or (s.city if s else "") or ""
+        bank_account = r.supplier_bank_account or (s.bank_account if s else "") or ""
+
+        supplier_bank_full = " ".join(filter(None, [bank_name, bank_branch]))
+        expense_label = REIMBURSEMENT_CATEGORY_LABELS.get(r.expense_category, r.expense_category or "")
+        ws.append([
+            "RMB",
+            today_str,
+            "",
+            idx,
+            payer_bank_name,
+            payer_bank_account,
+            payer_name,
+            supplier_bank_full,
+            bank_province,
+            bank_city,
+            bank_account[:4],
+            bank_account,
+            r.supplier_name or "",
+            float(r.total_amount or 0),
+            expense_label,
+            r.remark or "",
+            "0",
+            "",
+            idx,
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"批量支付_{today_str}.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
 @router.get("/{reimbursement_id}", response_model=ReimbursementResponse)
 async def get_reimbursement(
     reimbursement_id: str,
@@ -655,6 +762,30 @@ async def pay_reimbursement(
     db_reimbursement.paid_by = current_user.id
     db_reimbursement.paid_at = datetime.now()
 
+    # 自动创建支出记录（避免重复）
+    existing = await db.execute(
+        select(Expense).where(Expense.reimbursement_id == reimbursement_id)
+    )
+    if not existing.scalar_one_or_none():
+        paid_date = db_reimbursement.paid_at.date()
+        expense = Expense(
+            reimbursement_id=reimbursement_id,
+            source_type="reimbursement",
+            supplier_name=db_reimbursement.supplier_name,
+            invoice_id=db_reimbursement.invoice_id,
+            contract_id=db_reimbursement.contract_id,
+            amount=db_reimbursement.amount,
+            tax_amount=db_reimbursement.tax_amount,
+            total_amount=db_reimbursement.total_amount,
+            expense_date=paid_date,
+            expense_year=str(paid_date.year),
+            expense_category=db_reimbursement.expense_category,
+            file_id=db_reimbursement.file_id,
+            file_url=db_reimbursement.file_url,
+            remark=db_reimbursement.remark,
+        )
+        db.add(expense)
+
     await db.commit()
     await db.refresh(db_reimbursement)
 
@@ -858,37 +989,58 @@ async def confirm_ai_reimbursement_import(
                 name=reimbursement_data.supplier_name,
                 tax_id=reimbursement_data.supplier_tax_id,
                 bank_name=reimbursement_data.supplier_bank_name,
+                bank_branch=reimbursement_data.supplier_bank_branch,
+                bank_province=reimbursement_data.supplier_bank_province,
                 bank_account=reimbursement_data.supplier_bank_account,
+                bank_code=reimbursement_data.supplier_bank_code,
                 remark=f"AI录入报销单自动创建",
             )
             db.add(new_supplier)
 
-    # 创建进项发票记录
+    # 创建或复用进项发票记录
     invoice_no = reimbursement_data.invoice_no
     if not invoice_no and reimbursement_data.invoice_code and reimbursement_data.invoice_number:
         invoice_no = f"{reimbursement_data.invoice_code}-{reimbursement_data.invoice_number}"
 
-    db_invoice = Invoice(
-        invoice_code=reimbursement_data.invoice_code,
-        invoice_number=reimbursement_data.invoice_number,
-        invoice_no=invoice_no,
-        invoice_date=reimbursement_data.issue_date,
-        issue_date=reimbursement_data.issue_date,
-        amount=reimbursement_data.amount,
-        tax_amount=reimbursement_data.tax_amount,
-        total_amount=reimbursement_data.total_amount,
-        invoice_type="purchase",  # 进项发票
-        seller_name=reimbursement_data.supplier_name,  # 销售方是供应商
-        seller_tax_id=reimbursement_data.supplier_tax_id,
-        status="normal",  # 已收到发票
-        file_id=reimbursement_data.file_id,
-        file_url=reimbursement_data.file_url,
-        ai_parsed=True,
-        parse_confidence=reimbursement_data.parse_confidence,
-        remark=reimbursement_data.remark,
-    )
-    db.add(db_invoice)
-    await db.flush()  # 获取发票ID
+    db_invoice = None
+    invoice_reused = False
+    if invoice_no:
+        existing_inv = await db.execute(
+            select(Invoice).where(Invoice.invoice_no == invoice_no)
+        )
+        db_invoice = existing_inv.scalar_one_or_none()
+        if db_invoice:
+            invoice_reused = True
+            if reimbursement_data.file_id:
+                db_invoice.file_id = reimbursement_data.file_id
+                db_invoice.file_url = reimbursement_data.file_url
+            if reimbursement_data.remark:
+                db_invoice.remark = reimbursement_data.remark
+
+    if not db_invoice:
+        db_invoice = Invoice(
+            invoice_code=reimbursement_data.invoice_code,
+            invoice_number=reimbursement_data.invoice_number,
+            invoice_no=invoice_no,
+            invoice_date=reimbursement_data.issue_date,
+            issue_date=reimbursement_data.issue_date,
+            amount=reimbursement_data.amount,
+            tax_amount=reimbursement_data.tax_amount,
+            total_amount=reimbursement_data.total_amount,
+            invoice_type="purchase",
+            buyer_name=await _get_setting_value(db, SettingKeys.COMPANY_NAME),
+            buyer_tax_id=await _get_setting_value(db, SettingKeys.COMPANY_TAX_ID),
+            seller_name=reimbursement_data.supplier_name,
+            seller_tax_id=reimbursement_data.supplier_tax_id,
+            status="normal",
+            file_id=reimbursement_data.file_id,
+            file_url=reimbursement_data.file_url,
+            ai_parsed=True,
+            parse_confidence=reimbursement_data.parse_confidence,
+            remark=reimbursement_data.remark,
+        )
+        db.add(db_invoice)
+        await db.flush()
 
     # 创建报销单，关联发票
     db_reimbursement = Reimbursement(
@@ -896,6 +1048,10 @@ async def confirm_ai_reimbursement_import(
         supplier_name=reimbursement_data.supplier_name,
         supplier_tax_id=reimbursement_data.supplier_tax_id,
         supplier_bank_name=reimbursement_data.supplier_bank_name,
+        supplier_bank_branch=reimbursement_data.supplier_bank_branch,
+        supplier_bank_province=reimbursement_data.supplier_bank_province,
+        supplier_bank_city=reimbursement_data.supplier_bank_city,
+        supplier_bank_code=reimbursement_data.supplier_bank_code,
         supplier_bank_account=reimbursement_data.supplier_bank_account,
         amount=reimbursement_data.amount,
         tax_amount=reimbursement_data.tax_amount,
@@ -920,4 +1076,5 @@ async def confirm_ai_reimbursement_import(
         "reimbursement_id": db_reimbursement.id,
         "invoice_id": db_invoice.id,
         "supplier_created": payload.create_supplier,
+        "invoice_reused": invoice_reused,
     }

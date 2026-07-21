@@ -84,6 +84,10 @@ class ReimbursementBase(BaseModel):
     supplier_name: str = Field(..., description="供应商/收款方名称")
     supplier_tax_id: Optional[str] = Field(None, description="收款方税号")
     supplier_bank_name: Optional[str] = Field(None, description="开户行")
+    supplier_bank_branch: Optional[str] = Field(None, description="支行名称")
+    supplier_bank_province: Optional[str] = Field(None, description="开户行省份")
+    supplier_bank_city: Optional[str] = Field(None, description="开户行城市")
+    supplier_bank_code: Optional[str] = Field(None, description="联行号")
     supplier_bank_account: Optional[str] = Field(None, description="银行账号")
     amount: Decimal = Field(..., ge=0, description="报销金额不含税")
     tax_amount: Optional[Decimal] = Field(Decimal("0"), description="税额")
@@ -107,6 +111,10 @@ class ReimbursementUpdate(BaseModel):
     supplier_name: Optional[str] = None
     supplier_tax_id: Optional[str] = None
     supplier_bank_name: Optional[str] = None
+    supplier_bank_branch: Optional[str] = None
+    supplier_bank_province: Optional[str] = None
+    supplier_bank_city: Optional[str] = None
+    supplier_bank_code: Optional[str] = None
     supplier_bank_account: Optional[str] = None
     amount: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
@@ -176,6 +184,10 @@ class AiReimbursementDraft(BaseModel):
     supplier_name: Optional[str] = None
     supplier_tax_id: Optional[str] = None
     supplier_bank_name: Optional[str] = None
+    supplier_bank_branch: Optional[str] = None
+    supplier_bank_province: Optional[str] = None
+    supplier_bank_city: Optional[str] = None
+    supplier_bank_code: Optional[str] = None
     supplier_bank_account: Optional[str] = None
     amount: Decimal = Decimal("0")
     tax_amount: Decimal = Decimal("0")

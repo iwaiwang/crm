@@ -49,6 +49,9 @@
         <el-descriptions-item label="状态">
           <el-tag :type="getStatusType(contract.status)">{{ getStatusLabel(contract.status) }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="签约日期">
+          {{ contract.sign_date || '-' }}
+        </el-descriptions-item>
         <el-descriptions-item label="开始日期">
           {{ contract.start_date || '-' }}
         </el-descriptions-item>
@@ -89,6 +92,17 @@
           <el-col :span="8">
             <el-form-item label="合同金额" prop="amount">
               <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签约日期" prop="sign_date">
+              <el-date-picker
+                v-model="formData.sign_date"
+                type="date"
+                placeholder="选择签约日期"
+                style="width: 100%"
+                value-format="YYYY-MM-DD"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -508,10 +522,10 @@
         <!-- 销项发票：显示销售方（本公司）信息 - 自动填充 -->
         <el-divider content-position="left" v-if="invoiceForm.invoice_type === 'sales'">销售方信息（本公司）</el-divider>
         <el-form-item label="销售方名称" v-if="invoiceForm.invoice_type === 'sales'">
-          <el-input v-model="invoiceForm.seller_name" placeholder="销售方名称" disabled />
+          <el-input v-model="invoiceForm.seller_name" placeholder="销售方名称" />
         </el-form-item>
         <el-form-item label="销售方税号" v-if="invoiceForm.invoice_type === 'sales'">
-          <el-input v-model="invoiceForm.seller_tax_id" placeholder="销售方税号" disabled />
+          <el-input v-model="invoiceForm.seller_tax_id" placeholder="销售方税号" />
         </el-form-item>
 
         <!-- 销项发票：显示购买方输入框 -->
@@ -526,10 +540,10 @@
         <!-- 进项发票：显示购买方（本公司）信息 - 自动填充 -->
         <el-divider content-position="left" v-if="invoiceForm.invoice_type === 'purchase'">购买方信息（本公司）</el-divider>
         <el-form-item label="购买方名称" v-if="invoiceForm.invoice_type === 'purchase'">
-          <el-input v-model="invoiceForm.buyer_name" placeholder="购买方名称" disabled />
+          <el-input v-model="invoiceForm.buyer_name" placeholder="购买方名称" />
         </el-form-item>
         <el-form-item label="购买方税号" v-if="invoiceForm.invoice_type === 'purchase'">
-          <el-input v-model="invoiceForm.buyer_tax_id" placeholder="购买方税号" disabled />
+          <el-input v-model="invoiceForm.buyer_tax_id" placeholder="购买方税号" />
         </el-form-item>
 
         <!-- 进项发票：显示销售方输入框 -->
@@ -618,6 +632,7 @@ const formData = reactive({
   name: '',
   customer_id: '',
   amount: 0,
+  sign_date: '',
   start_date: '',
   end_date: '',
   status: 'signed',
@@ -764,6 +779,7 @@ const syncFormFromContract = () => {
   formData.name = contract.value.name || ''
   formData.customer_id = contract.value.customer_id || ''
   formData.amount = Number(contract.value.amount) || 0
+  formData.sign_date = contract.value.sign_date || ''
   formData.start_date = contract.value.start_date || ''
   formData.end_date = contract.value.end_date || ''
   formData.status = contract.value.status || 'signed'
@@ -801,6 +817,7 @@ const resetForm = () => {
     name: '',
     customer_id: '',
     amount: 0,
+    sign_date: '',
     start_date: '',
     end_date: '',
     status: 'signed',
@@ -1080,7 +1097,7 @@ const handleAiResult = (result) => {
     }
   }
   if (data.amount) formData.amount = parseFloat(data.amount)
-  if (data.sign_date) formData.start_date = data.sign_date
+  if (data.sign_date) formData.sign_date = data.sign_date
   if (data.start_date) formData.start_date = data.start_date
   if (data.end_date) formData.end_date = data.end_date
   if (data.payment_terms) formData.payment_terms = data.payment_terms

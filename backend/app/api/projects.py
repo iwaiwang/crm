@@ -11,7 +11,8 @@ from app.models.project import Project, ProjectFollowup, ProjectPhase, ProjectTa
 from app.models.customer import Customer
 from app.schemas.project import (
     ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectListItem,
-    FollowupCreate, FollowupResponse, PhaseCreate, PhaseResponse, TaskCreate, TaskResponse
+    FollowupCreate, FollowupResponse, PhaseCreate, PhaseResponse, TaskCreate, TaskResponse,
+    FunnelStage, FunnelResponse
 )
 
 router = APIRouter()
@@ -46,9 +47,25 @@ async def get_projects(
     result = await db.execute(query)
     projects = result.scalars().all()
 
+    # 获取所有项目的客户名称
+    customer_ids = list(set(p.customer_id for p in projects))
+    customer_map = {}
+    if customer_ids:
+        cust_result = await db.execute(
+            select(Customer.id, Customer.name).where(Customer.id.in_(customer_ids))
+        )
+        for row in cust_result:
+            customer_map[row[0]] = row[1]
+
+    items = []
+    for p in projects:
+        item = ProjectListItem.model_validate(p)
+        item.customer_name = customer_map.get(p.customer_id, "")
+        items.append(item)
+
     return ProjectListResponse(
         total=total,
-        items=[ProjectListItem.model_validate(p) for p in projects]
+        items=items
     )
 
 
@@ -156,15 +173,57 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     return {"message": "删除成功"}
 
 
+@router.get("/stats/funnel", response_model=FunnelResponse)
+async def get_funnel_stats(db: AsyncSession = Depends(get_db)):
+    """获取销售漏斗统计数据"""
+    from sqlalchemy import text
+
+    result = await db.execute(
+        select(Project.status, func.count(Project.id), func.coalesce(func.sum(Project.budget_amount), 0))
+        .group_by(Project.status)
+    )
+    rows = result.all()
+
+    status_map = {
+        "contact": "接触洽谈",
+        "bidding": "投标",
+        "signing": "签约",
+        "implementation": "实施",
+        "acceptance": "验收",
+        "after_sales": "售后",
+    }
+
+    status_order = ["contact", "bidding", "signing", "implementation", "acceptance", "after_sales"]
+    row_map = {r[0]: r for r in rows}
+
+    stages = []
+    for status in status_order:
+        r = row_map.get(status, (status, 0, 0))
+        stages.append(FunnelStage(
+            status=status,
+            label=status_map.get(status, status),
+            count=r[1],
+            total_amount=float(r[2] or 0)
+        ))
+
+    return FunnelResponse(stages=stages)
+
+
 @router.post("/{project_id}/followups", response_model=FollowupResponse)
 async def create_followup(project_id: str, followup: FollowupCreate, db: AsyncSession = Depends(get_db)):
     """添加销售跟进记录"""
     result = await db.execute(select(Project).where(Project.id == project_id))
-    if not result.scalar():
+    project = result.scalar_one_or_none()
+    if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    db_followup = ProjectFollowup(**followup.model_dump(), project_id=project_id)
+    db_followup = ProjectFollowup(**followup.model_dump(exclude={'project_id'}), project_id=project_id)
     db.add(db_followup)
+
+    # 更新项目的最后跟进时间
+    from datetime import datetime
+    project.last_followup_at = datetime.utcnow()
+
     await db.commit()
     await db.refresh(db_followup)
 
@@ -191,7 +250,7 @@ async def create_phase(project_id: str, phase: PhaseCreate, db: AsyncSession = D
     if not result.scalar():
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    db_phase = ProjectPhase(**phase.model_dump(), project_id=project_id)
+    db_phase = ProjectPhase(**phase.model_dump(exclude={'project_id'}), project_id=project_id)
     db.add(db_phase)
     await db.commit()
     await db.refresh(db_phase)
@@ -242,7 +301,7 @@ async def create_task(project_id: str, task: TaskCreate, db: AsyncSession = Depe
     if not result.scalar():
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    db_task = ProjectTask(**task.model_dump(), project_id=project_id)
+    db_task = ProjectTask(**task.model_dump(exclude={'project_id'}), project_id=project_id)
     db.add(db_task)
     await db.commit()
     await db.refresh(db_task)

@@ -115,6 +115,17 @@
                 </el-form-item>
               </el-col>
               <el-col :span="8">
+                <el-form-item label="签约日期">
+                  <el-date-picker
+                    v-model="form.sign_date"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择签约日期"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
                 <el-form-item label="开始日期">
                   <el-date-picker
                     v-model="form.start_date"
@@ -240,6 +251,7 @@ const form = reactive({
   customer_id: '',
   customer_name: '',
   amount: 0,
+  sign_date: '',
   start_date: '',
   end_date: '',
   status: 'signed',
@@ -330,7 +342,8 @@ const buildLegacyPreview = (aiResult) => {
       customer_id: matchedCustomers[0]?.id || '',
       customer_name: customerName,
       amount: contractAmount,
-      start_date: data.start_date || data.sign_date || '',
+      sign_date: data.sign_date || '',
+      start_date: data.start_date || '',
       end_date: data.end_date || '',
       status: 'signed',
       payment_terms: normalizeText(data.payment_terms),
@@ -392,6 +405,7 @@ const resetState = () => {
     customer_id: '',
     customer_name: '',
     amount: 0,
+    sign_date: '',
     start_date: '',
     end_date: '',
     status: 'signed',
@@ -413,6 +427,7 @@ const mapPreviewToForm = (preview) => {
     customer_id: contract.customer_id || '',
     customer_name: contract.customer_name || '',
     amount: Number(contract.amount || 0),
+    sign_date: contract.sign_date || '',
     start_date: contract.start_date || '',
     end_date: contract.end_date || '',
     status: contract.status || 'signed',
@@ -524,6 +539,7 @@ const confirmImport = async () => {
         customer_id: nullableText(form.customer_id),
         customer_name: nullableText(form.customer_name),
         amount: Number(form.amount || 0),
+        sign_date: form.sign_date || null,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
         payment_terms: nullableText(form.payment_terms),
@@ -554,6 +570,7 @@ const confirmImport = async () => {
           remark: 'AI录入合同时自动创建',
         })).id,
         amount: Number(form.amount || 0),
+        sign_date: form.sign_date || null,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
         status: form.status || 'signed',

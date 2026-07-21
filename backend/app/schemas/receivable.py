@@ -61,7 +61,8 @@ class ReceivableResponse(ReceivableBase):
     created_at: datetime
     updated_at: datetime
     payment_records: Optional[List[PaymentRecordResponse]] = None
-    contract_no: Optional[str] = None  # 关联合同编号
+    contract_no: Optional[str] = None
+    contract_name: Optional[str] = None
 
     class Config:
         from_attributes = True

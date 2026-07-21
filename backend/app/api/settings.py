@@ -33,8 +33,10 @@ def _get_upload_directory() -> str:
 # 预定义设置项的默认值
 DEFAULT_SETTINGS = {
     SettingKeys.COMPANY_NAME: {"value": "", "value_type": "string", "description": "公司名称", "is_public": True},
+    SettingKeys.COMPANY_LOGO_URL: {"value": "", "value_type": "string", "description": "公司 Logo URL", "is_public": True},
     SettingKeys.COMPANY_TAX_ID: {"value": "", "value_type": "string", "description": "公司税号", "is_public": True},
     SettingKeys.COMPANY_BANK_ACCOUNT: {"value": "", "value_type": "string", "description": "公司银行账号", "is_public": True},
+    SettingKeys.COMPANY_BANK_NAME: {"value": "", "value_type": "string", "description": "公司开户行", "is_public": True},
     SettingKeys.COMPANY_ADDRESS: {"value": "", "value_type": "string", "description": "公司地址", "is_public": True},
     SettingKeys.COMPANY_PHONE: {"value": "", "value_type": "string", "description": "公司电话", "is_public": True},
     SettingKeys.COMPANY_EMAIL: {"value": "", "value_type": "string", "description": "公司邮箱", "is_public": True},
@@ -216,6 +218,7 @@ async def get_company_info(db: AsyncSession = Depends(get_db)):
             Setting.key.in_(
                 [
                     SettingKeys.COMPANY_NAME,
+                    SettingKeys.COMPANY_LOGO_URL,
                     SettingKeys.COMPANY_TAX_ID,
                     SettingKeys.COMPANY_BANK_ACCOUNT,
                     SettingKeys.COMPANY_ADDRESS,

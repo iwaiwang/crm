@@ -47,6 +47,8 @@ class ExpenseBase(BaseModel):
     supplier_name: Optional[str] = Field(None, description="供应商/收款方名称")
     invoice_id: Optional[str] = Field(None, description="关联的进项发票 ID")
     contract_id: Optional[str] = Field(None, description="关联合同 ID")
+    reimbursement_id: Optional[str] = Field(None, description="关联报销单 ID")
+    source_type: Optional[str] = Field("manual", description="来源类型")
     amount: Decimal = Field(default=0, description="支出金额（不含税）")
     tax_amount: Optional[Decimal] = Field(None, description="税额")
     total_amount: Decimal = Field(default=0, description="价税合计")
@@ -67,6 +69,8 @@ class ExpenseCreate(ExpenseBase):
 
 
 class ExpenseUpdate(BaseModel):
+    reimbursement_id: Optional[str] = None
+    source_type: Optional[str] = None
     supplier_id: Optional[str] = None
     supplier_name: Optional[str] = None
     invoice_id: Optional[str] = None

@@ -140,6 +140,48 @@
       </el-col>
     </el-row>
 
+    <!-- 逾期应收款提醒 -->
+    <el-row :gutter="20" class="stats-row" v-if="overdueItems.length > 0">
+      <el-col :span="24">
+        <el-card class="overdue-card">
+          <template #header>
+            <div class="card-header overdue-header">
+              <span class="overdue-title">
+                <el-icon :size="20"><WarningFilled /></el-icon>
+                逾期应收款提醒
+              </span>
+              <el-tag type="danger" effect="dark">共 {{ overdueItems.length }} 笔，¥{{ formatNumber(stats.receivables?.overdue_amount) }}</el-tag>
+            </div>
+          </template>
+          <el-table :data="overdueItems" stripe size="small" @row-click="(row) => $router.push('/receivables')">
+            <el-table-column prop="contract_no" label="合同编号" width="160" />
+            <el-table-column prop="contract_name" label="合同名称" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="customer_name" label="客户" width="140" show-overflow-tooltip />
+            <el-table-column label="未收金额" width="140" align="right">
+              <template #default="{ row }">
+                <strong class="overdue-amount">¥{{ formatNumber(row.unpaid_amount) }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column prop="due_date" label="到期日" width="120" align="center" />
+            <el-table-column label="逾期天数" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.days_overdue > 90 ? 'danger' : row.days_overdue > 30 ? 'warning' : 'info'" effect="dark">
+                  {{ row.days_overdue }} 天
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'partial' ? 'warning' : 'danger'" size="small">
+                  {{ row.status === 'partial' ? '部分收款' : '未收款' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 图表区域 -->
     <el-row :gutter="20" class="charts-row">
       <el-col :span="12">
@@ -157,35 +199,33 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>合同状态分布</span>
-            </div>
-          </template>
-          <div ref="contractStatusRef" class="chart"></div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 现金流图表 -->
-    <el-row :gutter="20" class="charts-row">
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <div class="card-header">
               <span>月度收支趋势</span>
             </div>
           </template>
           <div ref="cashflowTrendRef" class="chart"></div>
         </el-card>
       </el-col>
+    </el-row>
 
-      <el-col :span="12">
+    <!-- 销售漏斗 -->
+    <el-row :gutter="20" class="charts-row">
+      <el-col :span="24">
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>支出分类占比</span>
+              <span>销售漏斗</span>
             </div>
           </template>
-          <div ref="expenseCategoryRef" class="chart"></div>
+          <div class="funnel-row">
+            <div class="funnel-stage" v-for="s in funnelData" :key="s.status">
+              <div class="funnel-label">{{ s.label }}</div>
+              <div class="funnel-bar-wrap">
+                <div class="funnel-bar" :style="{ height: funnelHeight(s.total_amount) + 'px', background: funnelColor(s.status) }" />
+              </div>
+              <div class="funnel-amount">¥ {{ formatFunnelAmount(s.total_amount) }}</div>
+              <div class="funnel-count">{{ s.count }} 个项目</div>
+            </div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -222,19 +262,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { User, Document, Coin, Finished, TrendCharts, Money, Plus } from '@element-plus/icons-vue'
+import { User, Document, Coin, Finished, TrendCharts, Money, Plus, WarningFilled } from '@element-plus/icons-vue'
 import { getDashboardStats } from '@/api/dashboard'
+import { getFunnelStats } from '@/api/project'
 import AiContractImportDrawer from '@/components/AiContractImportDrawer.vue'
 
 const stats = ref({})
 const customerTrendRef = ref(null)
-const contractStatusRef = ref(null)
 const cashflowTrendRef = ref(null)
-const expenseCategoryRef = ref(null)
+const funnelData = ref([])
 const selectedYear = ref(new Date().getFullYear().toString())
 const aiImportVisible = ref(false)
+
+const overdueItems = computed(() => {
+  return stats.value.receivables?.overdue_items || []
+})
 
 const formatNumber = (num) => {
   if (!num) return '0'
@@ -246,9 +290,8 @@ const loadStats = async () => {
     stats.value = await getDashboardStats({ year: selectedYear.value })
     nextTick(() => {
       initCustomerTrendChart()
-      initContractStatusChart()
       initCashflowTrendChart()
-      initExpenseCategoryChart()
+      loadFunnel()
     })
   } catch (error) {
     console.error('加载统计数据失败:', error)
@@ -280,41 +323,6 @@ const initCustomerTrendChart = () => {
             { offset: 0, color: 'rgba(64,158,255,0.5)' },
             { offset: 1, color: 'rgba(64,158,255,0.1)' },
           ]),
-        },
-      },
-    ],
-  })
-
-  window.addEventListener('resize', () => chart.resize())
-}
-
-const initContractStatusChart = () => {
-  if (!contractStatusRef.value) return
-
-  const chart = echarts.init(contractStatusRef.value)
-  const c = stats.value.contracts || {}
-
-  chart.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { top: '5%', left: 'center' },
-    series: [
-      {
-        name: '合同状态',
-        type: 'pie',
-        radius: ['40%', '70%'],
-        data: [
-          { value: c.draft || 0, name: '草拟' },
-          { value: c.pending_review || 0, name: '待审核' },
-          { value: c.in_progress || 0, name: '执行中' },
-          { value: c.completed || 0, name: '已完成' },
-          { value: c.terminated || 0, name: '已终止' },
-        ],
-        emphasis: {
-          itemStyle: {
-            shadowBlur: 10,
-            shadowOffsetX: 0,
-            shadowColor: 'rgba(0, 0, 0, 0.5)',
-          },
         },
       },
     ],
@@ -375,38 +383,30 @@ const initCashflowTrendChart = () => {
   window.addEventListener('resize', () => chart.resize())
 }
 
-const initExpenseCategoryChart = () => {
-  if (!expenseCategoryRef.value) return
+const loadFunnel = async () => {
+  try {
+    const res = await getFunnelStats()
+    funnelData.value = res.stages
+  } catch (e) {
+    console.error('加载漏斗统计失败:', e)
+  }
+}
 
-  const chart = echarts.init(expenseCategoryRef.value)
-  const cashflow = stats.value.cashflow || {}
+const funnelHeight = (amount) => {
+  const max = Math.max(...funnelData.value.map(s => s.total_amount), 1)
+  return Math.max(4, (amount / max) * 28)
+}
 
-  const categoryData = Object.entries(cashflow.expense_by_category || {}).map(([name, data]) => ({
-    value: data.amount,
-    name,
-  }))
+const funnelColor = (status) => {
+  const colors = { contact: '#409EFF', bidding: '#409EFF', signing: '#409EFF', implementation: '#67C23A', acceptance: '#67C23A', after_sales: '#E6A23C' }
+  return colors[status] || '#409EFF'
+}
 
-  chart.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { top: '5%', left: 'center' },
-    series: [
-      {
-        name: '支出分类',
-        type: 'pie',
-        radius: ['40%', '70%'],
-        data: categoryData,
-        emphasis: {
-          itemStyle: {
-            shadowBlur: 10,
-            shadowOffsetX: 0,
-            shadowColor: 'rgba(0, 0, 0, 0.5)',
-          },
-        },
-      },
-    ],
-  })
-
-  window.addEventListener('resize', () => chart.resize())
+const formatFunnelAmount = (val) => {
+  const n = Number(val)
+  if (!n) return '0'
+  if (n >= 10000) return (n / 10000).toFixed(1) + '万'
+  return n.toLocaleString()
 }
 
 onMounted(() => {
@@ -544,5 +544,54 @@ onMounted(() => {
   border: none;
   color: #fff;
   box-shadow: 0 10px 24px rgba(29, 78, 216, 0.22);
+}
+
+/* 销售漏斗 */
+.funnel-row { display: flex; gap: 12px; align-items: flex-end; }
+.funnel-stage { flex: 1; text-align: center; padding: 8px; border-radius: 8px; transition: background .2s; }
+.funnel-stage:hover { background: #f5f7fa; }
+.funnel-label { font-size: 13px; color: #666; margin-bottom: 4px; }
+.funnel-bar-wrap { height: 32px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px; }
+.funnel-bar { width: 85%; border-radius: 4px; min-height: 4px; transition: height .3s; }
+.funnel-amount { font-size: 16px; font-weight: 700; color: #303133; }
+.funnel-count { font-size: 12px; color: #909399; }
+
+.overdue-card {
+  border: 2px solid #f56c6c;
+  border-radius: 12px;
+}
+
+.overdue-card :deep(.el-card__header) {
+  background: linear-gradient(135deg, #fef0f0, #fdf6f6);
+  border-bottom: 1px solid #fde2e2;
+  border-radius: 12px 12px 0 0;
+  padding: 14px 20px;
+}
+
+.overdue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.overdue-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f56c6c;
+}
+
+.overdue-amount {
+  color: #f56c6c;
+}
+
+.overdue-card :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.overdue-card :deep(.el-table__row:hover) {
+  background: #fef0f0 !important;
 }
 </style>

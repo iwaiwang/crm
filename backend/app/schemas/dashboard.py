@@ -26,6 +26,17 @@ class ContractStats(BaseModel):
     new_this_month: int = 0
 
 
+class OverdueReceivableItem(BaseModel):
+    id: str
+    contract_no: str = ""
+    contract_name: str = ""
+    customer_name: str = ""
+    unpaid_amount: Decimal = Decimal(0)
+    due_date: str = ""
+    days_overdue: int = 0
+    status: str = ""
+
+
 class ReceivableStats(BaseModel):
     total_amount: Decimal = Decimal(0)
     received_amount: Decimal = Decimal(0)
@@ -34,6 +45,7 @@ class ReceivableStats(BaseModel):
     paid_count: int = 0
     unpaid_count: int = 0
     overdue_count: int = 0
+    overdue_items: List[OverdueReceivableItem] = []
 
 
 class InvoiceStats(BaseModel):

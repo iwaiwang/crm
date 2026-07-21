@@ -77,3 +77,10 @@ export function previewAiReimbursementImport(fileId) {
 export function confirmAiReimbursementImport(data) {
   return request.post('/reimbursements/ai-import/confirm', data)
 }
+
+// 导出批量支付 Excel
+export function exportBatchPayment(ids) {
+  return request.post('/reimbursements/export-batch-payment', ids, {
+    responseType: 'blob',
+  })
+}

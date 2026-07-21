@@ -100,14 +100,32 @@
 </template>
 
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { normalizeUser, useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet, OfficeBuilding } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+let tokenCheckTimer = null
+
+const checkTokenExpiry = () => {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    if (payload.exp && Date.now() >= payload.exp * 1000) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      userStore.logout()
+      router.push('/login')
+      ElMessage.error('登录已过期，请重新登录')
+    }
+  } catch { /* ignore malformed token */ }
+}
 
 const hasPermission = (menu) => {
   const user = normalizeUser(userStore.user)
@@ -135,6 +153,18 @@ const handleCommand = async (command) => {
     router.push('/login')
   }
 }
+
+onMounted(() => {
+  checkTokenExpiry()
+  tokenCheckTimer = setInterval(checkTokenExpiry, 30000)
+})
+
+onUnmounted(() => {
+  if (tokenCheckTimer) {
+    clearInterval(tokenCheckTimer)
+    tokenCheckTimer = null
+  }
+})
 </script>
 
 <style scoped>

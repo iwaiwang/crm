@@ -34,13 +34,14 @@
         <el-button link type="primary" @click="clearSelection">清除选择</el-button>
       </div>
 
-      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="contract_no" label="关联合同" width="120" />
-        <el-table-column prop="amount" label="应收金额" width="110" align="right">
+        <el-table-column prop="contract_no" label="合同编号" width="180" sortable="custom" />
+        <el-table-column prop="contract_name" label="合同名称" width="240" show-overflow-tooltip />
+        <el-table-column prop="amount" label="应收金额" width="110" align="right" sortable="custom">
           <template #default="{ row }">¥{{ Number(row.amount).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column prop="received_amount" label="已收金额" width="110" align="right">
+        <el-table-column prop="received_amount" label="已收金额" width="110" align="right" sortable="custom">
           <template #default="{ row }">¥{{ Number(row.received_amount).toLocaleString() }}</template>
         </el-table-column>
         <el-table-column prop="unpaid_amount" label="未收金额" width="110" align="right">
@@ -50,7 +51,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="due_date" label="应收日期" width="110" />
+        <el-table-column prop="due_date" label="应收日期" width="110" sortable="custom" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
@@ -147,6 +148,7 @@ const selectedReceivables = ref([])
 
 const searchForm = reactive({ status: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+const sortParams = reactive({ sort_by: '', sort_order: 'asc' })
 const formData = ref({ id: '', contract_id: '', amount: 0, due_date: '', remark: '' })
 const paymentForm = ref({ amount: 0, payment_date: new Date().toISOString().split('T')[0], payment_method: 'bank', remark: '' })
 
@@ -179,7 +181,12 @@ const selectedUnpaidAmount = computed(() => {
 const loadReceivables = async () => {
   loading.value = true
   try {
-    const res = await getReceivables({ page: pagination.page, page_size: pagination.page_size, ...searchForm })
+    const params = { page: pagination.page, page_size: pagination.page_size, ...searchForm }
+    if (sortParams.sort_by) {
+      params.sort_by = sortParams.sort_by
+      params.sort_order = sortParams.sort_order
+    }
+    const res = await getReceivables(params)
     tableData.value = res.items
     pagination.total = res.total
   } catch (error) { console.error('加载失败:', error) } finally { loading.value = false }
@@ -190,7 +197,17 @@ const loadContracts = async () => {
 }
 
 const handleSearch = () => { pagination.page = 1; loadReceivables() }
-const handleReset = () => { searchForm.status = ''; handleSearch() }
+const handleReset = () => { searchForm.status = ''; sortParams.sort_by = ''; sortParams.sort_order = 'asc'; handleSearch() }
+const handleSortChange = ({ prop, order }) => {
+  if (order) {
+    sortParams.sort_by = prop
+    sortParams.sort_order = order === 'ascending' ? 'asc' : 'desc'
+  } else {
+    sortParams.sort_by = ''
+    sortParams.sort_order = 'asc'
+  }
+  loadReceivables()
+}
 const handleEdit = (row) => { showDialog.value = true; formData.value = { ...formData.value, ...row } }
 
 const handleContractChange = async (contractId) => {

@@ -39,6 +39,10 @@ class ProjectBase(BaseModel):
     bid_result: Optional[str] = Field(None, description="中标结果")
     competitor: Optional[str] = Field(None, description="竞争对手", max_length=200)
 
+    # 销售管道
+    probability: Optional[int] = Field(0, description="中标概率 0-100")
+    expected_sign_date: Optional[date] = Field(None, description="预计签单日期")
+
     remark: Optional[str] = Field(None, description="备注")
 
 
@@ -60,6 +64,8 @@ class ProjectUpdate(BaseModel):
     bid_date: Optional[date] = None
     bid_result: Optional[str] = None
     competitor: Optional[str] = Field(None, max_length=200)
+    probability: Optional[int] = Field(None, ge=0, le=100)
+    expected_sign_date: Optional[date] = None
     remark: Optional[str] = None
 
 
@@ -135,10 +141,6 @@ class ProjectResponse(ProjectBase):
     id: str
     created_at: datetime
     updated_at: datetime
-    # 关联关系字段，默认不加载，需要单独查询
-    followups: Optional[List[FollowupResponse]] = Field(default=None)
-    phases: Optional[List[PhaseResponse]] = Field(default=None)
-    tasks: Optional[List[TaskResponse]] = Field(default=None)
 
     class Config:
         from_attributes = True
@@ -149,12 +151,21 @@ class ProjectListItem(BaseModel):
     id: str
     name: str = Field(..., description="项目名称", max_length=200)
     customer_id: str = Field(..., description="关联客户")
+    customer_name: Optional[str] = Field(None, description="客户名称")
     contract_id: Optional[str] = Field(None, description="关联合同")
     manager: Optional[str] = Field(None, description="负责人", max_length=100)
     start_date: Optional[date] = Field(None, description="开始日期")
     end_date: Optional[date] = Field(None, description="预计结束日期")
     progress: int = Field(default=0, description="进度百分比 0-100", ge=0, le=100)
     status: ProjectStatus = Field(default=ProjectStatus.CONTACT, description="项目状态")
+    budget_amount: Optional[Decimal] = Field(None, description="预算金额")
+    bid_amount: Optional[Decimal] = Field(None, description="中标金额")
+    bid_date: Optional[date] = Field(None, description="投标日期")
+    bid_result: Optional[str] = Field(None, description="中标结果")
+    competitor: Optional[str] = Field(None, description="竞争对手", max_length=200)
+    probability: Optional[int] = Field(0, description="中标概率 0-100")
+    expected_sign_date: Optional[date] = Field(None, description="预计签单日期")
+    last_followup_at: Optional[datetime] = Field(None, description="最后跟进时间")
     created_at: datetime
     updated_at: datetime
 
@@ -165,3 +176,14 @@ class ProjectListItem(BaseModel):
 class ProjectListResponse(BaseModel):
     total: int
     items: List[ProjectListItem]
+
+
+class FunnelStage(BaseModel):
+    status: str
+    label: str
+    count: int
+    total_amount: float
+
+
+class FunnelResponse(BaseModel):
+    stages: List[FunnelStage]

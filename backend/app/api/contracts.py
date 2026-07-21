@@ -352,6 +352,8 @@ async def get_contracts(
     year: Optional[int] = None,
     status: Optional[str] = None,
     customer_id: Optional[str] = None,
+    sort_by: Optional[str] = Query(None, description="排序字段: customer_name, amount, sign_date"),
+    sort_order: Optional[str] = Query("asc", description="排序方向: asc, desc"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_any_menu_permission(['contracts', 'reimbursements'])),
 ):
@@ -360,24 +362,47 @@ async def get_contracts(
     if search:
         query = query.where((Contract.name.contains(search)) | (Contract.contract_no.contains(search)))
     if year:
-        query = query.where(func.extract("year", Contract.start_date) == year)
+        query = query.where(func.extract("year", Contract.sign_date) == year)
     if status:
         query = query.where(Contract.status == status)
     if customer_id:
         query = query.where(Contract.customer_id == customer_id)
 
+    # 按客户名称排序时需要 join Customer 表
+    if sort_by == "customer_name":
+        query = query.outerjoin(Customer, Contract.customer_id == Customer.id)
+
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar()
 
+    # 动态排序
+    sort_mapping = {
+        "customer_name": Customer.name,
+        "amount": Contract.amount,
+        "sign_date": Contract.sign_date,
+    }
+
+    if sort_by and sort_by in sort_mapping:
+        order_col = sort_mapping[sort_by]
+        query = query.order_by(order_col.desc()) if sort_order == "desc" else query.order_by(order_col.asc())
+    else:
+        query = query.order_by(Contract.created_at.desc())
+
     result = await db.execute(
-        query.order_by(Contract.created_at.desc())
-        .options(selectinload(Contract.files))
+        query
+        .options(selectinload(Contract.files), selectinload(Contract.customer))
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
     contracts = result.scalars().all()
 
-    return ContractListResponse(total=total, items=[ContractResponse.model_validate(item) for item in contracts])
+    items = []
+    for item in contracts:
+        resp = ContractResponse.model_validate(item)
+        resp.customer_name = item.customer.name if item.customer else ""
+        items.append(resp)
+
+    return ContractListResponse(total=total, items=items)
 
 
 @router.get("/{contract_id}", response_model=ContractResponse)
@@ -448,7 +473,8 @@ async def preview_ai_contract_import(
         customer_id=matched_customer.id if matched_customer else None,
         customer_name=customer_name,
         amount=amount,
-        start_date=_to_date(parsed_data.get("start_date") or parsed_data.get("sign_date")),
+        sign_date=_to_date(parsed_data.get("sign_date")),
+        start_date=_to_date(parsed_data.get("start_date")),
         end_date=_to_date(parsed_data.get("end_date")),
         status="signed",
         payment_terms=_clean_text(parsed_data.get("payment_terms")),
@@ -488,6 +514,7 @@ async def confirm_ai_contract_import(
         name=contract_data.name.strip(),
         customer_id=customer.id,
         amount=_to_decimal(contract_data.amount),
+        sign_date=_to_date(contract_data.sign_date),
         start_date=_to_date(contract_data.start_date),
         end_date=_to_date(contract_data.end_date),
         status=contract_data.status or "signed",

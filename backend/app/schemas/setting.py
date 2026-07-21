@@ -40,8 +40,10 @@ class SettingListResponse(BaseModel):
 class SettingKeys:
     # 公司信息
     COMPANY_NAME = "company_name"
+    COMPANY_LOGO_URL = "company_logo_url"
     COMPANY_TAX_ID = "company_tax_id"
     COMPANY_BANK_ACCOUNT = "company_bank_account"
+    COMPANY_BANK_NAME = "company_bank_name"
     COMPANY_ADDRESS = "company_address"
     COMPANY_PHONE = "company_phone"
     COMPANY_EMAIL = "company_email"

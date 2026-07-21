@@ -19,6 +19,7 @@ class ContractBase(BaseModel):
     name: str = Field(..., description="Contract name", max_length=200)
     customer_id: str = Field(..., description="Customer ID")
     amount: Decimal = Field(default=0, description="Contract amount")
+    sign_date: Optional[date] = Field(None, description="Sign date")
     start_date: Optional[date] = Field(None, description="Start date")
     end_date: Optional[date] = Field(None, description="End date")
     status: ContractStatus = Field(default=ContractStatus.SIGNED, description="Contract status")
@@ -39,6 +40,7 @@ class ContractUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     customer_id: Optional[str] = None
     amount: Optional[Decimal] = None
+    sign_date: Optional[date] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     status: Optional[ContractStatus] = None
@@ -69,6 +71,7 @@ class ContractFileResponse(BaseModel):
 
 class ContractResponse(ContractBase):
     id: str
+    customer_name: Optional[str] = None
     ai_parsed: Optional[bool] = False
     parsed_at: Optional[datetime] = None
     parse_confidence: Optional[float] = None
@@ -99,6 +102,7 @@ class AiContractDraft(BaseModel):
     customer_id: Optional[str] = Field(default=None, description="Matched customer ID")
     customer_name: Optional[str] = Field(default=None, description="Customer name from AI")
     amount: Decimal = Field(default=0, description="Contract amount")
+    sign_date: Optional[date] = Field(default=None, description="Sign date")
     start_date: Optional[date] = Field(default=None, description="Start date")
     end_date: Optional[date] = Field(default=None, description="End date")
     status: ContractStatus = Field(default=ContractStatus.SIGNED, description="Contract status")

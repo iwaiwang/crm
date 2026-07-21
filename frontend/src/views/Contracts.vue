@@ -18,7 +18,7 @@
             @keyup.enter="handleSearch"
           />
         </el-form-item>
-        <el-form-item label="年份">
+        <el-form-item label="签约年份">
           <el-select v-model="searchForm.year" placeholder="全部年份" clearable style="width: 100px">
             <el-option label="2026" value="2026" />
             <el-option label="2025" value="2025" />
@@ -52,18 +52,18 @@
         <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
       </div>
 
-      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="contract_no" label="合同编号" width="120">
+        <el-table-column prop="contract_no" label="合同编号" width="170">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleViewDetail(row)">
               {{ row.contract_no }}
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="合同名称" min-width="200" />
-        <el-table-column prop="customer_name" label="客户" width="150" />
-        <el-table-column prop="amount" label="合同金额" width="120" align="right">
+        <el-table-column prop="name" label="合同名称" width="280" />
+        <el-table-column prop="customer_name" label="客户" width="200" sortable="custom" />
+        <el-table-column prop="amount" label="合同金额" width="120" align="right" sortable="custom">
           <template #default="{ row }">
             ¥{{ Number(row.amount).toLocaleString() }}
           </template>
@@ -75,6 +75,7 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="sign_date" label="签约日期" width="110" sortable="custom" />
         <el-table-column prop="start_date" label="开始日期" width="110" />
         <el-table-column prop="end_date" label="结束日期" width="110" />
         <el-table-column label="操作" width="180" fixed="right">
@@ -126,6 +127,8 @@ const pagination = reactive({
   total: 0,
 })
 
+const sortParams = reactive({ sort_by: '', sort_order: 'asc' })
+
 const loadContracts = async () => {
   loading.value = true
   try {
@@ -133,6 +136,10 @@ const loadContracts = async () => {
       page: pagination.page,
       page_size: pagination.page_size,
       ...searchForm,
+    }
+    if (sortParams.sort_by) {
+      params.sort_by = sortParams.sort_by
+      params.sort_order = sortParams.sort_order
     }
     const res = await getContracts(params)
     tableData.value = res.items
@@ -167,8 +174,22 @@ const handleSearch = () => {
 
 const handleReset = () => {
   searchForm.search = ''
+  searchForm.year = ''
   searchForm.status = ''
+  sortParams.sort_by = ''
+  sortParams.sort_order = 'asc'
   handleSearch()
+}
+
+const handleSortChange = ({ prop, order }) => {
+  if (order) {
+    sortParams.sort_by = prop
+    sortParams.sort_order = order === 'ascending' ? 'asc' : 'desc'
+  } else {
+    sortParams.sort_by = ''
+    sortParams.sort_order = 'asc'
+  }
+  loadContracts()
 }
 
 // 打开新增合同页面

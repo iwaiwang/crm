@@ -16,6 +16,13 @@
         >
           <el-icon><Download /></el-icon> 导出 Excel ({{ selectedReimbursements.length }})
         </el-button>
+        <el-button
+          type="warning"
+          :disabled="selectedReimbursements.length === 0"
+          @click="handleBatchPaymentExport"
+        >
+          <el-icon><Download /></el-icon> 导出批量支付 ({{ selectedReimbursements.length }})
+        </el-button>
       </div>
     </div>
 
@@ -123,7 +130,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="supplier_name" label="供应商/收款方" width="150" />
-        <el-table-column prop="payer_company" label="支付方" width="140">
+        <el-table-column prop="payer_company" label="支付方" width="200">
           <template #default="{ row }">
             <el-tag v-if="row.payer_company" type="info" effect="plain">{{ row.payer_company }}</el-tag>
             <span v-else class="text-muted">—</span>
@@ -257,6 +264,30 @@
               <el-input v-model="formData.supplier_bank_name" placeholder="开户银行名称" />
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="支行">
+              <el-input v-model="formData.supplier_bank_branch" placeholder="支行名称" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="开户行省份">
+              <el-input v-model="formData.supplier_bank_province" placeholder="开户行所在省份" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="开户行城市">
+              <el-input v-model="formData.supplier_bank_city" placeholder="开户行所在城市" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="联行号">
+              <el-input v-model="formData.supplier_bank_code" placeholder="12位联行号" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="银行账号">
               <el-input v-model="formData.supplier_bank_account" placeholder="银行账号" />
@@ -401,6 +432,7 @@ import {
   getReimbursementStatistics,
   getReimbursementPayerCompanies,
   getReimbursementExpenseCategories,
+  exportBatchPayment,
 } from '@/api/reimbursement'
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
@@ -450,6 +482,10 @@ const exportToExcel = () => {
     '供应商/收款方': r.supplier_name || '',
     '税号': r.supplier_tax_id || '',
     '开户行': r.supplier_bank_name || '',
+    '支行': r.supplier_bank_branch || '',
+    '开户行省份': r.supplier_bank_province || '',
+    '开户行城市': r.supplier_bank_city || '',
+    '联行号': r.supplier_bank_code || '',
     '银行账号': r.supplier_bank_account || '',
     '报销金额(不含税)': Number(r.amount || 0),
     '税额': Number(r.tax_amount || 0),
@@ -479,6 +515,10 @@ const exportToExcel = () => {
     { wch: 20 },  // 供应商
     { wch: 18 },  // 税号
     { wch: 20 },  // 开户行
+    { wch: 18 },  // 支行
+    { wch: 14 },  // 开户行省份
+    { wch: 14 },  // 开户行城市
+    { wch: 14 },  // 联行号
     { wch: 22 },  // 银行账号
     { wch: 14 },  // 报销金额
     { wch: 12 },  // 税额
@@ -503,6 +543,29 @@ const exportToExcel = () => {
   const dateStr = new Date().toISOString().slice(0, 10)
   XLSX.writeFile(wb, `报销单导出_${dateStr}.xlsx`)
   ElMessage.success(`已导出 ${rows.length} 张报销单`)
+}
+
+const handleBatchPaymentExport = async () => {
+  if (selectedReimbursements.value.length === 0) {
+    ElMessage.warning('请先选择要导出的报销单')
+    return
+  }
+  try {
+    const ids = selectedReimbursements.value.map(r => r.id)
+    const response = await exportBatchPayment(ids)
+    const url = window.URL.createObjectURL(new Blob([response]))
+    const link = document.createElement('a')
+    link.href = url
+    const dateStr = new Date().toISOString().slice(0, 10)
+    link.setAttribute('download', `批量支付_${dateStr}.xlsx`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${ids.length} 张报销单为批量支付格式`)
+  } catch (error) {
+    ElMessage.error('导出批量支付失败')
+  }
 }
 const fileInfo = ref(null)
 const documentUploaderKey = ref(0)
@@ -545,6 +608,10 @@ const formData = reactive({
   supplier_name: '',
   supplier_tax_id: '',
   supplier_bank_name: '',
+  supplier_bank_branch: '',
+  supplier_bank_province: '',
+  supplier_bank_city: '',
+  supplier_bank_code: '',
   supplier_bank_account: '',
   amount: 0,
   tax_amount: 0,
@@ -666,6 +733,10 @@ const handleSupplierSelect = (item) => {
   formData.supplier_name = item.name
   formData.supplier_tax_id = item.tax_id || ''
   formData.supplier_bank_name = item.bank_name || ''
+  formData.supplier_bank_branch = item.bank_branch || ''
+  formData.supplier_bank_province = item.bank_province || ''
+  formData.supplier_bank_city = item.city || ''
+  formData.supplier_bank_code = item.bank_code || ''
   formData.supplier_bank_account = item.bank_account || ''
 }
 
@@ -766,6 +837,10 @@ const openAddDialog = () => {
     supplier_name: '',
     supplier_tax_id: '',
     supplier_bank_name: '',
+    supplier_bank_branch: '',
+    supplier_bank_province: '',
+    supplier_bank_city: '',
+    supplier_bank_code: '',
     supplier_bank_account: '',
     amount: 0,
     tax_amount: 0,
@@ -798,6 +873,10 @@ const handleEdit = (row) => {
     supplier_name: row.supplier_name,
     supplier_tax_id: row.supplier_tax_id || '',
     supplier_bank_name: row.supplier_bank_name || '',
+    supplier_bank_branch: row.supplier_bank_branch || '',
+    supplier_bank_province: row.supplier_bank_province || '',
+    supplier_bank_city: row.supplier_bank_city || '',
+    supplier_bank_code: row.supplier_bank_code || '',
     supplier_bank_account: row.supplier_bank_account || '',
     amount: Number(row.amount),
     tax_amount: Number(row.tax_amount || 0),
