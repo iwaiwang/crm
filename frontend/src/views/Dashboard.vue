@@ -140,6 +140,49 @@
       </el-col>
     </el-row>
 
+    <!-- 证书统计卡片 -->
+    <el-row :gutter="20" class="stats-row">
+      <el-col :span="8">
+        <el-card class="stat-card cert-card" @click="$router.push('/certificates')">
+          <div class="stat-content">
+            <div class="stat-icon">
+              <el-icon :size="40"><Key /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.certificates?.active_count || 0 }}</div>
+              <div class="stat-label">已签发证书</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="stat-card cert-warning-card" @click="$router.push('/certificates')">
+          <div class="stat-content">
+            <div class="stat-icon">
+              <el-icon :size="40"><Warning /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value" style="color: #e6a23c">{{ stats.certificates?.expiring_soon_count || 0 }}</div>
+              <div class="stat-label">即将过期</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="stat-card cert-danger-card" @click="$router.push('/certificates')">
+          <div class="stat-content">
+            <div class="stat-icon">
+              <el-icon :size="40"><CircleClose /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value" style="color: #f56c6c">{{ stats.certificates?.expired_count || 0 }}</div>
+              <div class="stat-label">已过期证书</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 逾期应收款提醒 -->
     <el-row :gutter="20" class="stats-row" v-if="overdueItems.length > 0">
       <el-col :span="24">
@@ -175,6 +218,61 @@
                 <el-tag :type="row.status === 'partial' ? 'warning' : 'danger'" size="small">
                   {{ row.status === 'partial' ? '部分收款' : '未收款' }}
                 </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 证书到期提醒 -->
+    <el-row :gutter="20" class="stats-row" v-if="(stats.certificates?.expiring_soon_items?.length || 0) > 0">
+      <el-col :span="24">
+        <el-card class="cert-warning-section">
+          <template #header>
+            <div class="card-header cert-alert-header">
+              <span class="cert-alert-title warning-title">
+                <el-icon :size="20"><WarningFilled /></el-icon>
+                即将过期证书
+              </span>
+              <el-tag type="warning" effect="dark">共 {{ stats.certificates?.expiring_soon_count || 0 }} 张</el-tag>
+            </div>
+          </template>
+          <el-table :data="stats.certificates?.expiring_soon_items || []" stripe size="small"
+            @row-click="(row) => $router.push('/certificates')">
+            <el-table-column prop="customer_name" label="医院名称" min-width="160" />
+            <el-table-column prop="product_name" label="软件产品" min-width="160" />
+            <el-table-column prop="end_date" label="截止日期" width="120" align="center" />
+            <el-table-column label="剩余天数" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag type="warning" effect="dark">{{ row.days_remaining }} 天</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20" class="stats-row" v-if="(stats.certificates?.expired_items?.length || 0) > 0">
+      <el-col :span="24">
+        <el-card class="cert-danger-section">
+          <template #header>
+            <div class="card-header cert-alert-header">
+              <span class="cert-alert-title danger-title">
+                <el-icon :size="20"><WarningFilled /></el-icon>
+                已过期证书
+              </span>
+              <el-tag type="danger" effect="dark">共 {{ stats.certificates?.expired_count || 0 }} 张</el-tag>
+            </div>
+          </template>
+          <el-table :data="stats.certificates?.expired_items || []" stripe size="small"
+            @row-click="(row) => $router.push('/certificates')">
+            <el-table-column prop="customer_name" label="医院名称" min-width="160" />
+            <el-table-column prop="product_name" label="软件产品" min-width="160" />
+            <el-table-column prop="end_date" label="截止日期" width="120" align="center" />
+            <el-table-column label="过期天数" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag type="danger" effect="dark">{{ row.days_overdue }} 天</el-tag>
               </template>
             </el-table-column>
           </el-table>
@@ -264,7 +362,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { User, Document, Coin, Finished, TrendCharts, Money, Plus, WarningFilled } from '@element-plus/icons-vue'
+import { User, Document, Coin, Finished, TrendCharts, Money, Plus, WarningFilled, Key, Warning, CircleClose } from '@element-plus/icons-vue'
 import { getDashboardStats } from '@/api/dashboard'
 import { getFunnelStats } from '@/api/project'
 import AiContractImportDrawer from '@/components/AiContractImportDrawer.vue'
@@ -594,4 +692,32 @@ onMounted(() => {
 .overdue-card :deep(.el-table__row:hover) {
   background: #fef0f0 !important;
 }
+
+/* Certificate stat cards */
+.cert-card .stat-icon { background: linear-gradient(135deg, #409EFF, #67c23a); }
+.cert-warning-card .stat-icon { background: linear-gradient(135deg, #f5a623, #e6a23c); }
+.cert-danger-card .stat-icon { background: linear-gradient(135deg, #f56c6c, #e63946); }
+
+.cert-warning-section { border: 2px solid #e6a23c; border-radius: 12px; }
+.cert-warning-section :deep(.el-card__header) {
+  background: linear-gradient(135deg, #fdf6ec, #fef9f0);
+  border-bottom: 1px solid #fae3c4;
+  border-radius: 12px 12px 0 0; padding: 14px 20px;
+}
+
+.cert-danger-section { border: 2px solid #f56c6c; border-radius: 12px; }
+.cert-danger-section :deep(.el-card__header) {
+  background: linear-gradient(135deg, #fef0f0, #fdf6f6);
+  border-bottom: 1px solid #fde2e2;
+  border-radius: 12px 12px 0 0; padding: 14px 20px;
+}
+
+.cert-alert-header { display: flex; justify-content: space-between; align-items: center; }
+.cert-alert-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
+.warning-title { color: #e6a23c; }
+.danger-title { color: #f56c6c; }
+
+.cert-warning-section :deep(.el-table__row), .cert-danger-section :deep(.el-table__row) { cursor: pointer; }
+.cert-warning-section :deep(.el-table__row:hover) { background: #fdf6ec !important; }
+.cert-danger-section :deep(.el-table__row:hover) { background: #fef0f0 !important; }
 </style>

@@ -56,6 +56,10 @@
           <el-icon><Finished /></el-icon>
           <span>项目进度</span>
         </el-menu-item>
+        <el-menu-item index="/certificates" v-if="hasPermission('certificates')">
+          <el-icon><Key /></el-icon>
+          <span>证书管理</span>
+        </el-menu-item>
         <el-menu-item index="/settings" v-if="userStore.user?.role === 'admin'">
           <el-icon><Setting /></el-icon>
           <span>系统设置</span>
@@ -105,7 +109,7 @@ import { useRouter } from 'vue-router'
 import { normalizeUser, useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet, OfficeBuilding } from '@element-plus/icons-vue'
+import { UserFilled, DataLine, User, Document, Tickets, Coin, Goods, Finished, Money, Setting, Wallet, OfficeBuilding, Key } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()

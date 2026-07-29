@@ -36,6 +36,7 @@ class Customer(Base):
     projects = relationship("Project", back_populates="customer", cascade="all, delete-orphan", passive_deletes=True)
     incomes = relationship("Income", back_populates="customer", passive_deletes=True)
     expenses = relationship("Expense", back_populates="supplier", passive_deletes=True)
+    certificates = relationship("Certificate", back_populates="customer")
 
     def __repr__(self):
         return f"<Customer {self.name}>"

@@ -1,7 +1,7 @@
 """数据分析仪表盘 API"""
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract
+from sqlalchemy import select, func, extract, and_
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from typing import Optional
@@ -16,12 +16,14 @@ from app.models.product import Product
 from app.models.project import Project
 from app.models.income import Income
 from app.models.expense import Expense
+from app.models.certificate import Certificate
 from app.schemas.dashboard import (
     DashboardStats, CustomerStats, ContractStats, ReceivableStats,
     InvoiceStats, InventoryStats, ProjectStats
 )
 from app.schemas.income import IncomeStats
 from app.schemas.expense import ExpenseStats
+from app.schemas.certificate import CertificateStats, CertificateStatsItem
 
 router = APIRouter()
 
@@ -40,6 +42,75 @@ async def get_dashboard_stats(
         inventory=await get_inventory_stats(db),
         projects=await get_project_stats(db),
         cashflow=await get_cashflow_stats(db, year),
+        certificates=await get_certificate_stats(db),
+    )
+
+
+async def get_certificate_stats(db: AsyncSession) -> CertificateStats:
+    """证书统计 — 含即将过期和已过期的证书列表"""
+    today = date.today()
+    thirty_days = today + relativedelta(days=30)
+
+    # Auto-expire: transition active certs past end_date
+    expired_result = await db.execute(
+        select(Certificate).where(
+            and_(Certificate.status == "active", Certificate.end_date < today)
+        )
+    )
+    expired_certs = expired_result.scalars().all()
+    for c in expired_certs:
+        c.status = "expired"
+    if expired_certs:
+        await db.commit()
+
+    # Active count
+    active_result = await db.execute(
+        select(func.count()).select_from(Certificate).where(Certificate.status == "active")
+    )
+    active_count = active_result.scalar() or 0
+
+    # Expiring soon (within 30 days)
+    expiring_result = await db.execute(
+        select(Certificate).where(
+            and_(Certificate.status == "active", Certificate.end_date <= thirty_days, Certificate.end_date >= today)
+        ).order_by(Certificate.end_date.asc())
+    )
+    expiring_certs = expiring_result.scalars().all()
+    expiring_soon_items = []
+    for c in expiring_certs:
+        customer_name = c.customer.name if c.customer else ""
+        days_remaining = (c.end_date - today).days
+        expiring_soon_items.append(CertificateStatsItem(
+            id=c.id,
+            customer_name=customer_name,
+            product_name=c.product_name,
+            end_date=c.end_date.isoformat(),
+            days_remaining=days_remaining,
+        ))
+
+    # Already expired (status=expired)
+    expired_list_result = await db.execute(
+        select(Certificate).where(Certificate.status == "expired").order_by(Certificate.end_date.desc())
+    )
+    expired_list = expired_list_result.scalars().all()
+    expired_items = []
+    for c in expired_list:
+        customer_name = c.customer.name if c.customer else ""
+        days_overdue = (today - c.end_date).days
+        expired_items.append(CertificateStatsItem(
+            id=c.id,
+            customer_name=customer_name,
+            product_name=c.product_name,
+            end_date=c.end_date.isoformat(),
+            days_overdue=days_overdue,
+        ))
+
+    return CertificateStats(
+        active_count=active_count,
+        expiring_soon_count=len(expiring_soon_items),
+        expired_count=len(expired_items),
+        expiring_soon_items=expiring_soon_items,
+        expired_items=expired_items,
     )
 
 
@@ -287,6 +358,7 @@ async def get_project_stats(db: AsyncSession) -> ProjectStats:
         acceptance=statuses.get("acceptance", 0),
         after_sales=statuses.get("after_sales", 0),
         completed=statuses.get("after_sales", 0),
+        lost=statuses.get("lost", 0),
         overdue=0,
     )
 

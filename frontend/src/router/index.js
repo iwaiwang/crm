@@ -105,6 +105,12 @@ const routes = [
         meta: { title: '用户管理' },
       },
       {
+        path: 'certificates',
+        name: 'Certificates',
+        component: () => import('@/views/Certificates.vue'),
+        meta: { title: '证书管理' },
+      },
+      {
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/Settings.vue'),
@@ -163,6 +169,7 @@ router.beforeEach((to, from, next) => {
         'Projects': 'projects',
         'Incomes': 'cashflow',
         'Expenses': 'cashflow',
+        'Certificates': 'certificates',
         'Profile': 'profile',
         'Users': 'users',
         'Settings': 'settings',
@@ -180,6 +187,7 @@ router.beforeEach((to, from, next) => {
         'products': '/products',
         'projects': '/projects',
         'cashflow': '/incomes',
+        'certificates': '/certificates',
       }
 
       const requiredMenu = menuMap[to.name]

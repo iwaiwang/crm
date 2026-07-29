@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from decimal import Decimal
 
+from app.schemas.certificate import CertificateStats
+
 
 class CustomerStats(BaseModel):
     total: int = 0
@@ -73,6 +75,7 @@ class ProjectStats(BaseModel):
     acceptance: int = 0
     after_sales: int = 0
     completed: int = 0
+    lost: int = 0
     overdue: int = 0
 
 
@@ -98,3 +101,4 @@ class DashboardStats(BaseModel):
     inventory: InventoryStats
     projects: ProjectStats
     cashflow: Optional[CashflowStats] = None
+    certificates: Optional["CertificateStats"] = None

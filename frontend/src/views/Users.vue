@@ -84,6 +84,7 @@
             <el-checkbox value="products">产品库存</el-checkbox>
             <el-checkbox value="projects">项目进度</el-checkbox>
             <el-checkbox value="cashflow">收支管理</el-checkbox>
+            <el-checkbox value="certificates">证书管理</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
       </el-form>
@@ -159,6 +160,7 @@ const menuMap = {
   products: '产品库存',
   projects: '项目进度',
   cashflow: '收支管理',
+  certificates: '证书管理',
 }
 
 const getMenuLabel = (key) => menuMap[key] || key
