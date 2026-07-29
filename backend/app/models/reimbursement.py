@@ -33,7 +33,16 @@ class Reimbursement(Base):
     amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="报销金额不含税")
     tax_amount = Column(DECIMAL(15, 2), default=0, comment="税额")
     total_amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="价税合计")
-    expense_category = Column(String(50), default="other", comment="费用分类")
+    expense_category = Column(
+        SQLEnum(
+            "catering", "travel", "procurement", "office", "rent",
+            "utilities", "salary", "marketing", "software", "maintenance",
+            "training", "entertainment", "logistics", "other",
+            name="reimbursement_expense_category"
+        ),
+        default="other",
+        comment="费用分类"
+    )
     payer_company = Column(String(100), nullable=True, comment="支付方公司名称")
     remark = Column(Text, comment="备注说明")
 

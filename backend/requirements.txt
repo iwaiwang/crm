@@ -21,6 +21,9 @@ bcrypt==4.0.1
 python-dateutil==2.8.2
 pymupdf==1.24.0  # PDF text extraction
 openpyxl==3.1.5  # Excel export
+pyotp==2.10.0  # TOTP two-factor authentication
+qrcode==8.2  # QR code generation for 2FA setup
+Pillow==12.3.0  # Image processing (qrcode dependency)
 
 # Testing
 pytest==7.4.4

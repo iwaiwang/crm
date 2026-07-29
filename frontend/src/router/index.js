@@ -122,6 +122,12 @@ const routes = [
         component: () => import('@/views/Settings.vue'),
         meta: { title: '系统设置' },
       },
+      {
+        path: 'settings/docs',
+        name: 'SystemDocs',
+        component: () => import('@/views/SystemDocs.vue'),
+        meta: { title: '系统文档' },
+      },
     ],
   },
 ]
@@ -180,6 +186,7 @@ router.beforeEach((to, from, next) => {
         'Profile': 'profile',
         'Users': 'users',
         'Settings': 'settings',
+        'SystemDocs': 'settings',
       }
 
       // 权限到路由路径的映射（用于动态跳转）

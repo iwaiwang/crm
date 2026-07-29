@@ -21,6 +21,8 @@ class User(Base):
     )
     is_active = Column(Boolean, default=True, comment="是否启用")
     menu_permissions = Column(Text, default="[]", comment="菜单权限 JSON 数组")
+    totp_secret = Column(String(32), nullable=True, comment="TOTP 密钥 (base32)")
+    totp_enabled = Column(Boolean, default=False, comment="是否已开启两步验证")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

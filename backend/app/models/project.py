@@ -19,7 +19,7 @@ class Project(Base):
     end_date = Column(Date, comment="预计结束日期")
     progress = Column(Integer, default=0, comment="进度百分比 0-100")
     status = Column(
-        SQLEnum("contact", "bidding", "signing", "implementation", "acceptance", "after_sales", name="project_status"),
+        SQLEnum("contact", "bidding", "signing", "implementation", "acceptance", "after_sales", "lost", name="project_status"),
         default="contact",
         comment="项目状态",
     )

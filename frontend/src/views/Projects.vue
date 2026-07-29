@@ -30,7 +30,7 @@
     <!-- Card Grid -->
     <div class="card-grid" v-loading="loading">
       <div class="card" v-for="p in activeProjects" :key="p.id"
-        :class="{ warning: isStale(p) }"
+        :class="{ warning: isStale(p), lost: p.status === 'lost' }"
         @click="openDetail(p)">
         <div class="card-body">
           <div class="card-header">
@@ -345,6 +345,7 @@ const statusList = [
   { value: 'implementation', label: '实施', color: '#F56C6C' },
   { value: 'acceptance', label: '验收', color: '#67C23A' },
   { value: 'after_sales', label: '售后', color: '#909399' },
+  { value: 'lost', label: '流失', color: '#C0C4CC' },
 ]
 
 const statusMap = Object.fromEntries(statusList.map(s => [s.value, s.label]))
@@ -497,7 +498,7 @@ const funnelHeight = (amount) => {
 }
 
 const funnelColor = (status) => {
-  const colors = { contact: '#409EFF', bidding: '#409EFF', signing: '#409EFF', implementation: '#67C23A', acceptance: '#67C23A', after_sales: '#E6A23C' }
+  const colors = { contact: '#409EFF', bidding: '#409EFF', signing: '#409EFF', implementation: '#67C23A', acceptance: '#67C23A', after_sales: '#E6A23C', lost: '#C0C4CC' }
   return colors[status] || '#409EFF'
 }
 
@@ -516,7 +517,7 @@ const daysSinceFollowup = (p) => {
 }
 
 const getStatusType = (s) => {
-  const m = { contact: 'info', bidding: 'info', signing: 'warning', implementation: 'danger', acceptance: 'success', after_sales: 'primary' }
+  const m = { contact: 'info', bidding: 'info', signing: 'warning', implementation: 'danger', acceptance: 'success', after_sales: 'primary', lost: 'info' }
   return m[s] || 'info'
 }
 const getStatusLabel = (s) => statusMap[s] || s
@@ -549,6 +550,7 @@ onMounted(() => { loadProjects(); loadFunnel(); loadCustomers(); loadContracts()
 .card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); cursor: pointer; transition: box-shadow .2s; border-left: 3px solid transparent; display: flex; flex-direction: column; gap: 10px; }
 .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12); }
 .card.warning { border-left-color: #F56C6C; }
+.card.lost { opacity: 0.5; filter: grayscale(0.8); }
 .card-body { min-width: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
 .card-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

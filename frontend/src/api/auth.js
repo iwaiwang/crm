@@ -19,3 +19,20 @@ export function getCurrentUser() {
 export function register(data) {
   return request.post('/auth/register', data)
 }
+
+// 两步验证
+export function setup2fa() {
+  return request.post('/auth/2fa/setup')
+}
+
+export function verify2faSetup(data) {
+  return request.post('/auth/2fa/verify-setup', data)
+}
+
+export function verify2fa(data) {
+  return request.post('/auth/2fa/verify', data)
+}
+
+export function disable2fa(data) {
+  return request.post('/auth/2fa/disable', data)
+}

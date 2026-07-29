@@ -64,10 +64,14 @@
           <el-menu-item index="/certificates">证书列表</el-menu-item>
           <el-menu-item index="/certificates/guide">使用指南</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/settings" v-if="userStore.user?.role === 'admin'">
-          <el-icon><Setting /></el-icon>
-          <span>系统设置</span>
-        </el-menu-item>
+        <el-sub-menu index="settings" v-if="userStore.user?.role === 'admin'">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统设置</span>
+          </template>
+          <el-menu-item index="/settings">系统设置</el-menu-item>
+          <el-menu-item index="/settings/docs">系统文档</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 

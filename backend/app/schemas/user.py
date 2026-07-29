@@ -55,6 +55,27 @@ class UserResponse(UserBase):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "bearer"
-    user: UserResponse
+    user: Optional[UserResponse] = None
+    require_2fa: bool = False
+    temp_token: Optional[str] = None
+
+
+class LoginResponse(TokenResponse):
+    pass
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    qr_code_base64: str
+    qr_uri: str
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    token: str
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class TwoFactorDisableRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6)

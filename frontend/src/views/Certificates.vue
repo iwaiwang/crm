@@ -44,10 +44,10 @@
     <!-- 证书列表 -->
     <el-card class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
-        <el-table-column prop="cert_serial" label="证书序列号" width="140" show-overflow-tooltip />
-        <el-table-column prop="customer_name" label="医院名称" width="160" />
+        <el-table-column prop="cert_serial" label="证书序列号" width="200" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="医院名称" width="200" />
         <el-table-column prop="product_name" label="软件产品" width="160" />
-        <el-table-column label="有效期" width="200">
+        <el-table-column label="有效期" width="240">
           <template #default="{ row }">
             <span>{{ row.start_date }}</span>
             <span style="margin: 0 6px; color: #909399">至</span>

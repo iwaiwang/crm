@@ -5,6 +5,9 @@ from sqlalchemy import select, func
 from typing import Optional, List
 import json
 import os
+import shutil
+import tarfile
+from datetime import datetime
 
 from app.database import DATA_DIR, get_db
 from app.models.setting import Setting
@@ -130,6 +133,95 @@ async def get_public_settings(
     )
 
 
+@router.get("/company/info", response_model=dict)
+async def get_company_info(db: AsyncSession = Depends(get_db)):
+    """获取公司信息（公开接口，无需认证）"""
+    result = await db.execute(
+        select(Setting).where(
+            Setting.key.in_(
+                [
+                    SettingKeys.COMPANY_NAME,
+                    SettingKeys.COMPANY_LOGO_URL,
+                    SettingKeys.COMPANY_TAX_ID,
+                    SettingKeys.COMPANY_BANK_ACCOUNT,
+                    SettingKeys.COMPANY_ADDRESS,
+                    SettingKeys.COMPANY_PHONE,
+                    SettingKeys.COMPANY_EMAIL,
+                ]
+            )
+        )
+    )
+    settings = result.scalars().all()
+
+    company_info = {}
+    for setting in settings:
+        company_info[setting.key] = setting.value
+
+    return company_info
+
+
+@router.get("/system/upload-dir", response_model=dict)
+@router.get("/meta/upload-dir", response_model=dict)
+async def get_upload_directory(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_menu_permission('settings')),
+):
+    """获取实际的文件上传目录"""
+    return {
+        "database_directory": _get_database_directory(),
+        "upload_directory": _get_upload_directory(),
+        "avatars_directory": os.path.join(_get_upload_directory(), "avatars"),
+        "contracts_directory": os.path.join(_get_upload_directory(), "contracts"),
+        "invoices_directory": os.path.join(_get_upload_directory(), "invoices"),
+    }
+
+
+def _get_dir_size(path: str) -> int:
+    """递归计算目录大小（字节）"""
+    total = 0
+    if not os.path.exists(path):
+        return 0
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    for dirpath, _, filenames in os.walk(path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            if os.path.isfile(fp) and not os.path.islink(fp):
+                total += os.path.getsize(fp)
+    return total
+
+
+@router.get("/disk-usage", response_model=dict)
+async def get_disk_usage(
+    current_user: User = Depends(require_menu_permission('settings')),
+):
+    """获取系统磁盘使用情况"""
+    db_path = os.path.join(DATA_DIR, "crm.db")
+    upload_dir = settings.UPLOAD_DIR
+    backups_dir = os.path.join(os.path.dirname(DATA_DIR), "backups")
+
+    db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+    uploads_size = _get_dir_size(upload_dir)
+    backups_size = _get_dir_size(backups_dir)
+
+    backup_count = 0
+    if os.path.isdir(backups_dir):
+        backup_count = len([
+            d for d in os.listdir(backups_dir)
+            if os.path.isdir(os.path.join(backups_dir, d)) and d.startswith("20")
+        ])
+
+    return {
+        "db_size": db_size,
+        "uploads_size": uploads_size,
+        "backups_size": backups_size,
+        "total_size": db_size + uploads_size + backups_size,
+        "backup_count": backup_count,
+        "db_path": db_path,
+        "upload_dir": upload_dir,
+    }
+
+
 @router.get("/{setting_key}", response_model=SettingResponse)
 async def get_setting(setting_key: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('settings'))):
     """获取单个设置详情"""
@@ -196,54 +288,11 @@ async def delete_setting(setting_key: str, db: AsyncSession = Depends(get_db), c
     return {"message": "删除成功"}
 
 
-@router.get("/company/info", response_model=dict)
-async def get_company_info(db: AsyncSession = Depends(get_db)):
-    """获取公司信息（公开接口，无需认证）"""
-    result = await db.execute(
-        select(Setting).where(
-            Setting.key.in_(
-                [
-                    SettingKeys.COMPANY_NAME,
-                    SettingKeys.COMPANY_LOGO_URL,
-                    SettingKeys.COMPANY_TAX_ID,
-                    SettingKeys.COMPANY_BANK_ACCOUNT,
-                    SettingKeys.COMPANY_ADDRESS,
-                    SettingKeys.COMPANY_PHONE,
-                    SettingKeys.COMPANY_EMAIL,
-                ]
-            )
-        )
-    )
-    settings = result.scalars().all()
-
-    company_info = {}
-    for setting in settings:
-        company_info[setting.key] = setting.value
-
-    return company_info
-
-
 @router.post("/init", response_model=dict)
 async def init_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_menu_permission('settings'))):
     """初始化默认设置项"""
     await init_default_settings(db)
     return {"message": "设置项初始化成功"}
-
-
-@router.get("/system/upload-dir", response_model=dict)
-@router.get("/meta/upload-dir", response_model=dict)
-async def get_upload_directory(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_menu_permission('settings')),
-):
-    """获取实际的文件上传目录"""
-    return {
-        "database_directory": _get_database_directory(),
-        "upload_directory": _get_upload_directory(),
-        "avatars_directory": os.path.join(_get_upload_directory(), "avatars"),
-        "contracts_directory": os.path.join(_get_upload_directory(), "contracts"),
-        "invoices_directory": os.path.join(_get_upload_directory(), "invoices"),
-    }
 
 
 @router.post("/cleanup-files", response_model=dict)
@@ -303,4 +352,54 @@ async def cleanup_unused_files(
         "message": "清理完成",
         "deleted_count": deleted_count,
         "deleted_size": deleted_size,
+    }
+
+
+@router.post("/backup", response_model=dict)
+async def create_backup(
+    current_user: User = Depends(require_menu_permission('settings')),
+):
+    """手动触发数据库备份"""
+    backup_root = os.path.join(os.path.dirname(DATA_DIR), "backups")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = os.path.join(backup_root, timestamp)
+    os.makedirs(backup_dir, exist_ok=True)
+
+    db_path = os.path.join(DATA_DIR, "crm.db")
+    upload_dir = settings.UPLOAD_DIR
+
+    backup_db_size = 0
+    backup_uploads_size = 0
+
+    # 备份数据库
+    if os.path.exists(db_path):
+        db_dest = os.path.join(backup_dir, "crm.db")
+        shutil.copy2(db_path, db_dest)
+        backup_db_size = os.path.getsize(db_dest)
+
+    # 备份上传文件
+    if os.path.isdir(upload_dir) and os.listdir(upload_dir):
+        uploads_tar = os.path.join(backup_dir, "uploads.tar.gz")
+        with tarfile.open(uploads_tar, "w:gz") as tar:
+            tar.add(upload_dir, arcname="uploads")
+        backup_uploads_size = os.path.getsize(uploads_tar)
+
+    # 清理旧备份（保留最近 7 天）
+    keep_count = 7
+    deleted = 0
+    if os.path.isdir(backup_root):
+        cutoff = datetime.now().timestamp() - keep_count * 86400
+        for entry in os.listdir(backup_root):
+            entry_path = os.path.join(backup_root, entry)
+            if os.path.isdir(entry_path) and entry.startswith("20"):
+                if os.path.getmtime(entry_path) < cutoff:
+                    shutil.rmtree(entry_path)
+                    deleted += 1
+
+    return {
+        "message": "备份完成",
+        "backup_dir": timestamp,
+        "db_size": backup_db_size,
+        "uploads_size": backup_uploads_size,
+        "deleted_old_backups": deleted,
     }

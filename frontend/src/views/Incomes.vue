@@ -95,7 +95,13 @@
           <el-date-picker v-model="formData.income_date" type="date" placeholder="选择日期" style="width: 100%" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="付款方名称" prop="customer_name">
-          <el-input v-model="formData.customer_name" placeholder="付款方名称" />
+          <el-autocomplete
+            v-model="formData.customer_name"
+            :fetch-suggestions="querySearchSuppliers"
+            placeholder="输入付款方名称，支持从收款方补齐"
+            clearable
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="收入金额" prop="amount">
           <el-input-number v-model="formData.amount" :min="0" :precision="2" style="width: 100%" />
@@ -141,6 +147,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getIncomes, createIncome, updateIncome, deleteIncome } from '@/api/income'
+import { searchSuppliers } from '@/api/supplier'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -171,6 +178,20 @@ const formData = reactive({
   payment_method: '',
   remark: '',
 })
+
+const querySearchSuppliers = async (queryString, cb) => {
+  if (!queryString) {
+    cb([])
+    return
+  }
+  try {
+    const res = await searchSuppliers(queryString, 10)
+    const suggestions = (Array.isArray(res) ? res : []).map(s => ({ value: s.name }))
+    cb(suggestions)
+  } catch {
+    cb([])
+  }
+}
 
 const rules = {
   income_date: [{ required: true, message: '请选择收入日期', trigger: 'change' }],

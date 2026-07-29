@@ -1,3 +1,10 @@
 *.db
 *.db-journal
 venv/
+# Playwright MCP artifacts
+.playwright-mcp/
+# Debug screenshots and snapshots
+*.png
+*.txt
+backups/
+mockups/

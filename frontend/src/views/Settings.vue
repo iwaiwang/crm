@@ -299,6 +299,104 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+        <!-- 系统维护 -->
+        <el-tab-pane label="系统维护" name="maintenance">
+          <div class="maintenance-section">
+            <!-- 磁盘使用情况 -->
+            <el-card shadow="never" class="maintenance-card">
+              <template #header>
+                <div class="maintenance-card-header">
+                  <span>磁盘使用情况</span>
+                  <el-button link type="primary" @click="loadDiskUsage" :loading="loadingDisk">
+                    <el-icon><Refresh /></el-icon> 刷新
+                  </el-button>
+                </div>
+              </template>
+              <div class="disk-usage-grid">
+                <div class="disk-item">
+                  <div class="disk-item-icon" style="background: #ecf5ff">
+                    <el-icon :size="24" color="#409eff"><Coin /></el-icon>
+                  </div>
+                  <div class="disk-item-info">
+                    <div class="disk-item-label">数据库</div>
+                    <div class="disk-item-value">{{ formatFileSize(diskUsage.db_size) }}</div>
+                  </div>
+                </div>
+                <div class="disk-item">
+                  <div class="disk-item-icon" style="background: #f0f9eb">
+                    <el-icon :size="24" color="#67c23a"><Folder /></el-icon>
+                  </div>
+                  <div class="disk-item-info">
+                    <div class="disk-item-label">上传文件</div>
+                    <div class="disk-item-value">{{ formatFileSize(diskUsage.uploads_size) }}</div>
+                  </div>
+                </div>
+                <div class="disk-item">
+                  <div class="disk-item-icon" style="background: #fdf6ec">
+                    <el-icon :size="24" color="#e6a23c"><Box /></el-icon>
+                  </div>
+                  <div class="disk-item-info">
+                    <div class="disk-item-label">备份文件 ({{ diskUsage.backup_count }} 份)</div>
+                    <div class="disk-item-value">{{ formatFileSize(diskUsage.backups_size) }}</div>
+                  </div>
+                </div>
+                <div class="disk-item disk-item-total">
+                  <div class="disk-item-icon" style="background: #fef0f0">
+                    <el-icon :size="24" color="#f56c6c"><DataLine /></el-icon>
+                  </div>
+                  <div class="disk-item-info">
+                    <div class="disk-item-label">总计占用</div>
+                    <div class="disk-item-value">{{ formatFileSize(diskUsage.total_size) }}</div>
+                  </div>
+                </div>
+              </div>
+              <el-progress
+                v-if="diskUsage.total_size > 0"
+                :percentage="Math.round(diskUsage.db_size / diskUsage.total_size * 100)"
+                :color="['#409eff', '#67c23a', '#e6a23c']"
+                style="margin-top: 16px"
+              >
+                <template #default="{ percentage }">
+                  <span style="font-size: 12px; color: #909399">
+                    数据库占比 {{ percentage }}%，上传文件 {{ Math.round(diskUsage.uploads_size / diskUsage.total_size * 100) }}%，备份 {{ Math.round(diskUsage.backups_size / diskUsage.total_size * 100) }}%
+                  </span>
+                </template>
+              </el-progress>
+            </el-card>
+
+            <!-- 数据备份 -->
+            <el-card shadow="never" class="maintenance-card">
+              <template #header>
+                <div class="maintenance-card-header">
+                  <span>数据备份</span>
+                </div>
+              </template>
+              <div class="backup-section">
+                <div class="backup-desc">
+                  <p>手动创建数据库和上传文件的完整备份。备份文件保存在服务器 <code>backups/</code> 目录下，自动保留最近 7 天。</p>
+                </div>
+                <el-button type="primary" @click="handleBackup" :loading="backingUp">
+                  <el-icon><Box /></el-icon> 立即备份
+                </el-button>
+              </div>
+              <el-divider />
+              <div class="backup-info">
+                <div class="backup-info-item">
+                  <span class="backup-info-label">备份目录：</span>
+                  <code>backups/</code>（位于项目根目录，每次备份创建时间戳子目录）
+                </div>
+                <div class="backup-info-item">
+                  <span class="backup-info-label">保留策略：</span>
+                  <span>自动保留最近 7 天的备份，超过 7 天的自动清理</span>
+                </div>
+                <div class="backup-info-item">
+                  <span class="backup-info-label">恢复方法：</span>
+                  <span>将备份目录中的 <code>crm.db</code> 复制回 <code>data/</code> 目录，重启容器即可。上传文件解压 <code>uploads.tar.gz</code> 到 <code>data/uploads/</code></span>
+                </div>
+              </div>
+            </el-card>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -343,8 +441,8 @@
 <script setup>
 import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Delete } from '@element-plus/icons-vue'
-import { createSetting, getSettings, getCompanyInfo, getUploadDirectory, updateSetting, initSettings, cleanupUnusedFiles } from '@/api/setting'
+import { Refresh, Delete, Folder, Box, Coin, DataLine } from '@element-plus/icons-vue'
+import { createSetting, getSettings, getCompanyInfo, getUploadDirectory, updateSetting, initSettings, cleanupUnusedFiles, getDiskUsage, createBackup } from '@/api/setting'
 import { migrateReimbursementExpenseCategory } from '@/api/reimbursement'
 import { getAIServiceStatus, saveAiConfig as apiSaveAiConfig } from '@/api/document'
 import { getUserList } from '@/api/user'
@@ -360,7 +458,16 @@ const aiLastHealthCheck = ref(null)
 const actualUploadDir = ref('')
 const showCleanupDialog = ref(false)
 const cleaning = ref(false)
+const loadingDisk = ref(false)
+const backingUp = ref(false)
 const users = ref([])
+const diskUsage = reactive({
+  db_size: 0,
+  uploads_size: 0,
+  backups_size: 0,
+  total_size: 0,
+  backup_count: 0,
+})
 
 const isAuthError = (error) => {
   const status = error?.response?.status
@@ -905,10 +1012,50 @@ const saveEditSetting = async () => {
   }
 }
 
+// 磁盘使用情况
+const loadDiskUsage = async () => {
+  loadingDisk.value = true
+  try {
+    const data = await getDiskUsage()
+    Object.assign(diskUsage, data)
+  } catch (error) {
+    console.error('加载磁盘使用情况失败:', error)
+    ElMessage.error('加载磁盘使用情况失败')
+  } finally {
+    loadingDisk.value = false
+  }
+}
+
+// 手动备份
+const handleBackup = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要立即创建数据备份吗？备份会包含数据库和所有上传文件。',
+      '确认备份',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+    )
+    backingUp.value = true
+    const result = await createBackup()
+    ElMessage.success(`备份完成！已保存到 backups/${result.backup_dir}`)
+    if (result.deleted_old_backups > 0) {
+      ElMessage.info(`已自动清理 ${result.deleted_old_backups} 个旧备份`)
+    }
+    loadDiskUsage()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('备份失败:', error)
+      ElMessage.error(error.response?.data?.detail || '备份失败')
+    }
+  } finally {
+    backingUp.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings()
   loadUsers()
   checkAiService()
+  loadDiskUsage()
 })
 </script>
 
@@ -1040,5 +1187,124 @@ onMounted(() => {
   font-family: monospace;
   color: #909399;
   font-size: 12px;
+}
+
+.maintenance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.maintenance-card {
+  border: 1px solid #e4e7ed;
+}
+
+.maintenance-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.disk-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.disk-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.disk-item-total {
+  border-color: #f56c6c33;
+  background: #fef0f0;
+}
+
+.disk-item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.disk-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.disk-item-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.disk-item-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.backup-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.backup-desc {
+  flex: 1;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.backup-desc p {
+  margin: 0;
+}
+
+.backup-desc code {
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.backup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backup-info-item {
+  font-size: 13px;
+  color: #606266;
+}
+
+.backup-info-label {
+  color: #909399;
+}
+
+.backup-info-item code {
+  background: #f5f7fa;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .disk-usage-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

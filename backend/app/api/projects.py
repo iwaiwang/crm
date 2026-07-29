@@ -191,9 +191,10 @@ async def get_funnel_stats(db: AsyncSession = Depends(get_db)):
         "implementation": "实施",
         "acceptance": "验收",
         "after_sales": "售后",
+        "lost": "流失",
     }
 
-    status_order = ["contact", "bidding", "signing", "implementation", "acceptance", "after_sales"]
+    status_order = ["contact", "bidding", "signing", "implementation", "acceptance", "after_sales", "lost"]
     row_map = {r[0]: r for r in rows}
 
     stages = []

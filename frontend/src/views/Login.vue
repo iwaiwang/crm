@@ -21,6 +21,7 @@
         </div>
 
         <el-form
+          v-if="step === 'password'"
           ref="formRef"
           :model="loginForm"
           :rules="rules"
@@ -67,6 +68,40 @@
             </el-button>
           </el-form-item>
         </el-form>
+
+        <!-- 两步验证 -->
+        <div v-if="step === '2fa'" class="twofa-section">
+          <div class="form-header">
+            <h2>两步验证</h2>
+            <p>请输入验证器 App 中的 6 位验证码</p>
+          </div>
+          <div class="twofa-body">
+            <el-input
+              v-model="otpCode"
+              placeholder="000000"
+              maxlength="6"
+              size="large"
+              class="otp-input"
+              @keyup.enter="handle2faVerify"
+            />
+            <el-button
+              type="primary"
+              size="large"
+              :loading="loading"
+              class="login-btn"
+              @click="handle2faVerify"
+            >
+              {{ loading ? '验证中...' : '验 证' }}
+            </el-button>
+            <el-button
+              size="large"
+              class="back-btn"
+              @click="backToPassword"
+            >
+              返回
+            </el-button>
+          </div>
+        </div>
       </div>
 
       <div class="form-footer">
@@ -82,13 +117,16 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { normalizeUser, useUserStore } from '@/store/user'
-import { login } from '@/api/auth'
+import { login, verify2fa } from '@/api/auth'
 import { getPublicSettings } from '@/api/setting'
 
 const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
+const step = ref('password')
+const tempToken = ref('')
+const otpCode = ref('')
 const companyName = ref('菲克希斯科技')
 const companyLogo = ref('')
 const currentYear = new Date().getFullYear()
@@ -129,6 +167,12 @@ const handleLogin = async () => {
       loading.value = true
       try {
         const res = await login(loginForm)
+        if (res.require_2fa) {
+          tempToken.value = res.temp_token
+          step.value = '2fa'
+          loading.value = false
+          return
+        }
         userStore.setToken(res.access_token)
         userStore.setUser(res.user)
         ElMessage.success('登录成功')
@@ -140,6 +184,31 @@ const handleLogin = async () => {
       }
     }
   })
+}
+
+const handle2faVerify = async () => {
+  if (!otpCode.value || otpCode.value.length !== 6) {
+    ElMessage.warning('请输入6位验证码')
+    return
+  }
+  loading.value = true
+  try {
+    const res = await verify2fa({ token: tempToken.value, code: otpCode.value })
+    userStore.setToken(res.access_token)
+    userStore.setUser(res.user)
+    ElMessage.success('登录成功')
+    router.push('/dashboard')
+  } catch (error) {
+    ElMessage.error('验证失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    loading.value = false
+  }
+}
+
+const backToPassword = () => {
+  step.value = 'password'
+  otpCode.value = ''
+  tempToken.value = ''
 }
 
 const redirectToAllowedPage = (user) => {
@@ -259,6 +328,7 @@ onMounted(() => {
 
 .form-header {
   margin-bottom: 36px;
+  text-align: center;
 }
 
 .form-header h2 {
@@ -272,6 +342,10 @@ onMounted(() => {
   margin: 0;
   font-size: 15px;
   color: #64748b;
+}
+
+.twofa-section .form-header h2 {
+  font-size: 20px;
 }
 
 .login-form {
@@ -312,6 +386,30 @@ onMounted(() => {
 
 .login-btn:active {
   transform: translateY(0);
+}
+
+.twofa-section {
+  width: 100%;
+}
+
+.twofa-body {
+  margin-top: 24px;
+}
+
+.otp-input {
+  display: block;
+  max-width: 260px;
+  margin: 0 auto 20px;
+  text-align: center;
+  font-size: 24px;
+  letter-spacing: 12px;
+}
+
+.back-btn {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 10px;
+  font-size: 15px;
 }
 
 .form-footer {

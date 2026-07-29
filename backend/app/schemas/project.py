@@ -13,6 +13,7 @@ class ProjectStatus(str, Enum):
     IMPLEMENTATION = "implementation"
     ACCEPTANCE = "acceptance"
     AFTER_SALES = "after_sales"
+    LOST = "lost"
 
 
 class ProjectPhaseStatus(str, Enum):

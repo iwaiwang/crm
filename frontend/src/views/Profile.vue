@@ -58,6 +58,59 @@
       </el-form>
     </el-card>
 
+    <!-- 两步验证（仅管理员可见） -->
+    <el-card v-if="userForm.role === 'admin'" style="margin-top: 20px">
+      <template #header>
+        <span>两步验证</span>
+      </template>
+
+      <div v-if="!totpInfo.enabled && !totpInfo.settingUp">
+        <p style="color: #909399; margin-bottom: 12px">开启后登录时需额外输入验证器 App 中的 6 位动态码</p>
+        <el-button type="primary" @click="start2faSetup" :loading="totpInfo.loading">开启两步验证</el-button>
+      </div>
+
+      <div v-if="totpInfo.settingUp" class="twofa-setup">
+        <el-steps :active="2" align-center style="margin-bottom: 24px">
+          <el-step title="扫码" description="用验证器 App 扫描二维码" />
+          <el-step title="验证" description="输入动态码确认" />
+        </el-steps>
+        <div class="qr-section">
+          <img v-if="totpInfo.qrCode" :src="'data:image/png;base64,' + totpInfo.qrCode" class="qr-image" />
+          <p class="secret-text">密钥：<code>{{ totpInfo.secret }}</code></p>
+          <p style="font-size: 12px; color: #909399">如果无法扫码，可手动输入上方密钥到验证器 App</p>
+        </div>
+        <el-form :model="totpInfo.setupForm" label-width="120px" style="max-width: 400px; margin-top: 20px">
+          <el-form-item label="验证码">
+            <el-input v-model="totpInfo.setupForm.code" placeholder="输入6位验证码" maxlength="6" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="confirm2faSetup" :loading="totpInfo.loading">确认开启</el-button>
+            <el-button @click="cancel2faSetup">取消</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <div v-if="totpInfo.enabled && !totpInfo.settingUp">
+        <el-alert type="success" title="两步验证已启用" :closable="false" show-icon style="margin-bottom: 16px">
+          <template #default>
+            登录时需要输入验证器 App 中的 6 位动态码
+          </template>
+        </el-alert>
+        <div v-if="totpInfo.showDisableInput">
+          <el-form :model="totpInfo.disableForm" label-width="120px" style="max-width: 400px">
+            <el-form-item label="验证码">
+              <el-input v-model="totpInfo.disableForm.code" placeholder="输入6位验证码确认关闭" maxlength="6" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="danger" @click="confirmDisable2fa" :loading="totpInfo.loading">确认关闭</el-button>
+              <el-button @click="totpInfo.showDisableInput = false">取消</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+        <el-button v-else type="danger" plain @click="totpInfo.showDisableInput = true">关闭两步验证</el-button>
+      </div>
+    </el-card>
+
     <!-- 更换头像对话框 -->
     <el-dialog v-model="showAvatarDlg" title="更换头像" width="400px">
       <div class="avatar-upload">
@@ -82,6 +135,7 @@ import { ElMessage } from 'element-plus'
 import { User } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { updateProfile, changePassword, uploadAvatar } from '@/api/user'
+import { setup2fa, verify2faSetup, disable2fa } from '@/api/auth'
 
 const userStore = useUserStore()
 const passwordFormRef = ref(null)
@@ -122,6 +176,75 @@ const passwordRules = {
       trigger: 'blur',
     },
   ],
+}
+
+const totpInfo = reactive({
+  enabled: false,
+  settingUp: false,
+  loading: false,
+  secret: '',
+  qrCode: '',
+  showDisableInput: false,
+  setupForm: { code: '' },
+  disableForm: { code: '' },
+})
+
+const start2faSetup = async () => {
+  totpInfo.loading = true
+  try {
+    const res = await setup2fa()
+    totpInfo.secret = res.secret
+    totpInfo.qrCode = res.qr_code_base64
+    totpInfo.settingUp = true
+    totpInfo.setupForm.code = ''
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '获取密钥失败')
+  } finally {
+    totpInfo.loading = false
+  }
+}
+
+const confirm2faSetup = async () => {
+  if (!totpInfo.setupForm.code || totpInfo.setupForm.code.length !== 6) {
+    ElMessage.warning('请输入6位验证码')
+    return
+  }
+  totpInfo.loading = true
+  try {
+    await verify2faSetup({ token: '', code: totpInfo.setupForm.code })
+    totpInfo.enabled = true
+    totpInfo.settingUp = false
+    ElMessage.success('两步验证已开启')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '验证失败')
+  } finally {
+    totpInfo.loading = false
+  }
+}
+
+const cancel2faSetup = () => {
+  totpInfo.settingUp = false
+  totpInfo.secret = ''
+  totpInfo.qrCode = ''
+}
+
+const confirmDisable2fa = async () => {
+  if (!totpInfo.disableForm.code || totpInfo.disableForm.code.length !== 6) {
+    ElMessage.warning('请输入6位验证码')
+    return
+  }
+  totpInfo.loading = true
+  try {
+    await disable2fa({ code: totpInfo.disableForm.code })
+    totpInfo.enabled = false
+    totpInfo.showDisableInput = false
+    totpInfo.disableForm.code = ''
+    ElMessage.success('两步验证已关闭')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '关闭失败')
+  } finally {
+    totpInfo.loading = false
+  }
 }
 
 const loadUserInfo = () => {
@@ -220,5 +343,34 @@ onMounted(() => {
 .avatar-section {
   display: flex;
   align-items: center;
+}
+
+.twofa-setup {
+  padding: 10px 0;
+}
+
+.qr-section {
+  text-align: center;
+}
+
+.qr-image {
+  width: 200px;
+  height: 200px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.secret-text {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.secret-text code {
+  background: #f5f7fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 16px;
+  letter-spacing: 2px;
 }
 </style>

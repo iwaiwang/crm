@@ -49,3 +49,13 @@ export function getUploadDirectory() {
 export function cleanupUnusedFiles() {
   return request.post('/settings/cleanup-files')
 }
+
+// 获取磁盘使用情况
+export function getDiskUsage() {
+  return request.get('/settings/disk-usage')
+}
+
+// 手动备份
+export function createBackup() {
+  return request.post('/settings/backup')
+}
