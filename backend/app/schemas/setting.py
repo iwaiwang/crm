@@ -61,3 +61,7 @@ class SettingKeys:
     REIMBURSEMENT_DEFAULT_PAYER_ID = "reimbursement_default_payer_id"
     REIMBURSEMENT_PAYER_COMPANIES = "reimbursement_payer_companies"
     REIMBURSEMENT_EXPENSE_CATEGORIES = "reimbursement_expense_categories"
+
+    # 证书设置
+    CERT_FIRST_APPROVER_ID = "cert_first_approver_id"
+    CERT_SECOND_APPROVER_ID = "cert_second_approver_id"

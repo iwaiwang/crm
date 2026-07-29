@@ -202,6 +202,49 @@
           </el-form>
         </el-tab-pane>
 
+        <!-- 证书设置 -->
+        <el-tab-pane label="证书设置" name="certificate">
+          <el-form :model="certificateForm" label-width="150px" size="large">
+            <el-form-item label="一级审批人">
+              <el-select
+                v-model="certificateForm.first_approver_id"
+                clearable
+                filterable
+                placeholder="请选择一级审批人（可选，管理员始终可审批）"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in activeUsers"
+                  :key="user.id"
+                  :label="formatUserOption(user)"
+                  :value="user.id"
+                />
+              </el-select>
+              <div class="form-tip">管理员始终可以审批；这里选择的用户即使不是管理员，也可以进行证书一级审批（pending→approved）。</div>
+            </el-form-item>
+            <el-form-item label="二级审批人">
+              <el-select
+                v-model="certificateForm.second_approver_id"
+                clearable
+                filterable
+                placeholder="请选择二级审批人（可选，管理员始终可审批）"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in activeUsers"
+                  :key="user.id"
+                  :label="formatUserOption(user)"
+                  :value="user.id"
+                />
+              </el-select>
+              <div class="form-tip">管理员始终可以进行二级审批；这里选择的用户即使不是管理员，也可以签发证书（approved→active）。</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="saveCertificateConfig" :loading="saving">保存设置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <!-- 功能开关 -->
         <el-tab-pane label="功能开关" name="features">
           <el-form :model="featureForm" label-width="150px" size="large">
@@ -360,6 +403,12 @@ const reimbursementForm = reactive({
   expense_categories: [],
 })
 
+// 证书设置表单
+const certificateForm = reactive({
+  first_approver_id: '',
+  second_approver_id: '',
+})
+
 const newPayerCompany = ref('')
 const newExpenseCategory = ref('')
 
@@ -497,6 +546,16 @@ const loadSettings = async () => {
     }
     reimbursementForm.expense_categories = expenseCategories
     tagOriginalValues()
+
+    // 查找证书设置
+    const certFirstApproverSetting = response.items?.find(item => item.key === 'cert_first_approver_id')
+    if (certFirstApproverSetting) {
+      certificateForm.first_approver_id = certFirstApproverSetting.value || ''
+    }
+    const certSecondApproverSetting = response.items?.find(item => item.key === 'cert_second_approver_id')
+    if (certSecondApproverSetting) {
+      certificateForm.second_approver_id = certSecondApproverSetting.value || ''
+    }
 
     // 查找文件目录设置
     const uploadSetting = response.items?.find(item => item.key === 'upload_directory')
@@ -778,6 +837,31 @@ const saveReimbursementConfig = async () => {
     await loadSettings()
   } catch (error) {
     console.error('保存报销设置失败:', error)
+    ElMessage.error(error.response?.data?.detail || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+// 保存证书设置
+const saveCertificateConfig = async () => {
+  saving.value = true
+  try {
+    await upsertSetting('cert_first_approver_id', {
+      value: certificateForm.first_approver_id || '',
+      description: '证书一级审批人',
+      is_public: false,
+      value_type: 'string',
+    })
+    await upsertSetting('cert_second_approver_id', {
+      value: certificateForm.second_approver_id || '',
+      description: '证书二级审批人',
+      is_public: false,
+      value_type: 'string',
+    })
+    ElMessage.success('证书设置保存成功')
+  } catch (error) {
+    console.error('保存证书设置失败:', error)
     ElMessage.error(error.response?.data?.detail || '保存失败')
   } finally {
     saving.value = false

@@ -13,6 +13,7 @@ from typing import Optional
 from app.database import get_db
 from app.models.certificate import Certificate
 from app.models.customer import Customer
+from app.models.setting import Setting
 from app.models.user import User
 from app.schemas.certificate import (
     CertificateCreate,
@@ -20,10 +21,31 @@ from app.schemas.certificate import (
     CertificateResponse,
     CertificateListResponse,
 )
+from app.schemas.setting import SettingKeys
 from app.api.auth import get_current_user
 from app.services.certificate_service import generate_certificate, decrypt_private_key
 
 router = APIRouter()
+
+
+async def _get_setting_value(db: AsyncSession, key: str) -> Optional[str]:
+    result = await db.execute(select(Setting.value).where(Setting.key == key))
+    value = result.scalar_one_or_none()
+    return value.strip() if isinstance(value, str) else value
+
+
+async def _can_first_approve(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    approver_id = await _get_setting_value(db, SettingKeys.CERT_FIRST_APPROVER_ID)
+    return bool(approver_id and approver_id == user.id)
+
+
+async def _can_second_approve(db: AsyncSession, user: User) -> bool:
+    if user.role == "admin":
+        return True
+    approver_id = await _get_setting_value(db, SettingKeys.CERT_SECOND_APPROVER_ID)
+    return bool(approver_id and approver_id == user.id)
 
 
 def _cert_to_response(cert: Certificate, current_user: User) -> CertificateResponse:
@@ -190,8 +212,6 @@ async def approve_certificate(
     current_user: User = Depends(get_current_user),
 ):
     """审批证书 (两级审批: pending→approved→active+cert gen)"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可审批")
 
     result = await db.execute(
         select(Certificate).where(Certificate.id == cert_id).options(
@@ -206,6 +226,8 @@ async def approve_certificate(
         raise HTTPException(status_code=404, detail="证书不存在")
 
     if cert.status == "pending":
+        if not await _can_first_approve(db, current_user):
+            raise HTTPException(status_code=403, detail="无一级审批权限")
         if cert.applicant_id == current_user.id:
             raise HTTPException(status_code=400, detail="不能审核自己提交的申请")
         cert.status = "approved"
@@ -215,6 +237,8 @@ async def approve_certificate(
         return _cert_to_response(cert, current_user)
 
     elif cert.status == "approved":
+        if not await _can_second_approve(db, current_user):
+            raise HTTPException(status_code=403, detail="无二级审批权限")
         if cert.approver_id == current_user.id:
             raise HTTPException(status_code=400, detail="不能由同一人完成两级审批")
         if cert.applicant_id == current_user.id:
@@ -250,8 +274,8 @@ async def reject_certificate(
     current_user: User = Depends(get_current_user),
 ):
     """驳回证书申请"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可驳回")
+    if not await _can_first_approve(db, current_user) and not await _can_second_approve(db, current_user):
+        raise HTTPException(status_code=403, detail="无审批权限，无法驳回")
 
     result = await db.execute(
         select(Certificate).where(Certificate.id == cert_id).options(
@@ -281,8 +305,9 @@ async def revoke_certificate(
     current_user: User = Depends(get_current_user),
 ):
     """吊销证书"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可吊销")
+    if not await _can_first_approve(db, current_user) and not await _can_second_approve(db, current_user):
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="无审批权限，无法吊销")
 
     result = await db.execute(
         select(Certificate).where(Certificate.id == cert_id).options(
