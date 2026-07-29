@@ -83,8 +83,8 @@ def _cert_to_response(cert: Certificate, current_user: User) -> CertificateRespo
         issued_at=cert.issued_at,
         expires_at=cert.expires_at,
         revoked_at=cert.revoked_at,
-        can_approve=is_admin and cert.status == "pending" and cert.applicant_id != current_user.id,
-        can_final_approve=is_admin and cert.status == "approved" and cert.approver_id != current_user.id and cert.applicant_id != current_user.id,
+        can_approve=is_admin and cert.status == "pending",
+        can_final_approve=is_admin and cert.status == "approved",
         created_at=cert.created_at,
         updated_at=cert.updated_at,
     )
@@ -228,8 +228,6 @@ async def approve_certificate(
     if cert.status == "pending":
         if not await _can_first_approve(db, current_user):
             raise HTTPException(status_code=403, detail="无一级审批权限")
-        if cert.applicant_id == current_user.id:
-            raise HTTPException(status_code=400, detail="不能审核自己提交的申请")
         cert.status = "approved"
         cert.approver_id = current_user.id
         await db.commit()
@@ -239,10 +237,6 @@ async def approve_certificate(
     elif cert.status == "approved":
         if not await _can_second_approve(db, current_user):
             raise HTTPException(status_code=403, detail="无二级审批权限")
-        if cert.approver_id == current_user.id:
-            raise HTTPException(status_code=400, detail="不能由同一人完成两级审批")
-        if cert.applicant_id == current_user.id:
-            raise HTTPException(status_code=400, detail="不能审核自己提交的申请")
 
         customer_name = cert.customer.name if cert.customer else "Unknown"
         gen_result = generate_certificate(

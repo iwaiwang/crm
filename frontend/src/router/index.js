@@ -111,6 +111,12 @@ const routes = [
         meta: { title: '证书管理' },
       },
       {
+        path: 'certificates/guide',
+        name: 'CertificateGuide',
+        component: () => import('@/views/CertificateGuide.vue'),
+        meta: { title: '使用指南' },
+      },
+      {
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/Settings.vue'),
@@ -170,6 +176,7 @@ router.beforeEach((to, from, next) => {
         'Incomes': 'cashflow',
         'Expenses': 'cashflow',
         'Certificates': 'certificates',
+        'CertificateGuide': 'certificates',
         'Profile': 'profile',
         'Users': 'users',
         'Settings': 'settings',

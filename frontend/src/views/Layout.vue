@@ -56,10 +56,14 @@
           <el-icon><Finished /></el-icon>
           <span>项目进度</span>
         </el-menu-item>
-        <el-menu-item index="/certificates" v-if="hasPermission('certificates')">
-          <el-icon><Key /></el-icon>
-          <span>证书管理</span>
-        </el-menu-item>
+        <el-sub-menu index="certificates" v-if="hasPermission('certificates')">
+          <template #title>
+            <el-icon><Key /></el-icon>
+            <span>证书管理</span>
+          </template>
+          <el-menu-item index="/certificates">证书列表</el-menu-item>
+          <el-menu-item index="/certificates/guide">使用指南</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/settings" v-if="userStore.user?.role === 'admin'">
           <el-icon><Setting /></el-icon>
           <span>系统设置</span>
