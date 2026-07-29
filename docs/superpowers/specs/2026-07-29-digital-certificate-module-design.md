@@ -171,15 +171,67 @@ ELIF cert_expired_days > 0:
     ON_STARTUP: show warning dialog (single dismiss)
 ```
 
+## Certificate Expiry Reminders
+
+### Dashboard Integration
+
+The dashboard shows two kinds of certificate reminders:
+
+**1. Stats Card** — added to the top stats row, showing:
+- Total active certificates
+- Expiring within 30 days (warning count)
+- Already expired (danger count)
+
+**2. Expiry Alert Section** — placed below the overdue receivables section, styled similarly. Two subsections:
+
+| Alert Level | Condition | Style |
+|-------------|-----------|-------|
+| Warning (yellow) | End date within 30 days | Yellow border, "即将过期证书" header |
+| Danger (red) | End date already passed, status still active | Red border, "已过期证书" header |
+
+Table columns for both: hospital name, product name, end date, days remaining/overdue, status tag.
+
+Each row clickable → navigates to certificate list filtered to that status.
+
+### Dashboard API Extension
+
+Extend `GET /api/dashboard` response to include `certificates`:
+```json
+{
+  "certificates": {
+    "active_count": 15,
+    "expiring_soon_count": 3,      // end_date within 30 days
+    "expired_count": 2,             // end_date passed, still active
+    "expiring_soon_items": [
+      {
+        "id": "...", "customer_name": "XX医院", "product_name": "病案归档系统",
+        "end_date": "2026-08-15", "days_remaining": 17
+      }
+    ],
+    "expired_items": [
+      {
+        "id": "...", "customer_name": "YY医院", "product_name": "病案归档系统",
+        "end_date": "2026-07-01", "days_overdue": 28
+      }
+    ]
+  }
+}
+```
+
+### Expiry Auto-Update
+
+A background check runs on every dashboard load: any certificate with `status = 'active'` and `end_date < today` gets automatically transitioned to `status = 'expired'`. This ensures the status in the DB stays accurate.
+
 ## Frontend Pages
 
 ### Certificate List Page (`/certificates`)
 - Table with columns: serial, hospital name, product, validity dates, status tag, applicant
-- Status tags: pending (yellow), active (green), expired (red), rejected (gray), revoked (dark gray)
+- Status tags: pending (yellow), active (green), expiring-soon (orange, within 30 days), expired (red), rejected (gray), revoked (dark gray)
 - Filters: status dropdown, customer search, date range
+- Quick filter tabs: All | Active | Expiring Soon | Expired
 - Actions per row based on status:
-  - pending: approve/reject (if approver role)
-  - active: download, revoke (if admin)
+  - pending: approve/reject (if admin)
+  - active/expiring-soon: download, revoke (if admin)
   - expired: renew
 
 ### Certificate Application Form (Drawer)
@@ -227,6 +279,9 @@ ELIF cert_expired_days > 0:
 
 ### Modified Files
 - `backend/app/main.py` — register certificates router
+- `backend/app/api/dashboard.py` — add certificate stats + auto-expiry check
+- `backend/app/schemas/dashboard.py` — add CertificateStats schema
 - `frontend/src/router/index.js` — add route + permission mapping
 - `frontend/src/views/Layout.vue` — add menu item
 - `frontend/src/views/Users.vue` — add permission checkbox
+- `frontend/src/views/Dashboard.vue` — add cert stats card + expiry alert section
