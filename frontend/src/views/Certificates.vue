@@ -252,7 +252,7 @@ const loadCertificates = async () => {
 
 const loadCustomers = async () => {
   try {
-    const res = await getCustomers({ page: 1, page_size: 200 })
+    const res = await getCustomers({ page: 1, page_size: 100 })
     customers.value = res.items || []
   } catch { /* ignore */ }
 }
