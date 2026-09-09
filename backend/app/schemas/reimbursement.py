@@ -96,7 +96,7 @@ class ReimbursementBase(BaseModel):
     amount: Decimal = Field(..., ge=0, description="报销金额不含税")
     tax_amount: Optional[Decimal] = Field(Decimal("0"), description="税额")
     total_amount: Decimal = Field(..., ge=0, description="价税合计")
-    expense_category: Optional[ReimbursementCategory] = Field(ReimbursementCategory.OTHER, description="费用分类")
+    expense_category: Optional[str] = Field("other", description="费用分类")
     payer_company: Optional[str] = Field(None, description="支付方公司名称")
     remark: Optional[str] = Field(None, description="备注说明")
     file_id: Optional[str] = Field(None, description="附件文件ID")
@@ -107,8 +107,29 @@ class ReimbursementBase(BaseModel):
     travel_destination: Optional[str] = Field(None, description="出差地点(津贴)")
 
 
+class ReimbursementFileCreate(BaseModel):
+    file_id: str
+    file_name: Optional[str] = None
+    file_url: Optional[str] = None
+    file_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
+class ReimbursementFileResponse(BaseModel):
+    id: Optional[str] = None
+    file_id: str
+    file_name: Optional[str] = None
+    file_url: Optional[str] = None
+    file_type: Optional[str] = None
+    file_size: Optional[int] = None
+    sort_order: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class ReimbursementCreate(ReimbursementBase):
-    pass
+    files: Optional[List[ReimbursementFileCreate]] = None
 
 
 class ReimbursementUpdate(BaseModel):
@@ -123,7 +144,7 @@ class ReimbursementUpdate(BaseModel):
     amount: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
     total_amount: Optional[Decimal] = None
-    expense_category: Optional[ReimbursementCategory] = None
+    expense_category: Optional[str] = None
     payer_company: Optional[str] = None
     remark: Optional[str] = None
     file_id: Optional[str] = None
@@ -132,6 +153,7 @@ class ReimbursementUpdate(BaseModel):
     travel_start_date: Optional[date] = None
     travel_end_date: Optional[date] = None
     travel_destination: Optional[str] = None
+    files: Optional[List[ReimbursementFileCreate]] = None
 
 
 class ReimbursementReject(BaseModel):
@@ -159,6 +181,9 @@ class ReimbursementResponse(ReimbursementBase):
     can_pay: bool = False
     created_at: datetime
     updated_at: datetime
+    invoice_no: Optional[str] = None
+    invoice_code: Optional[str] = None
+    files: List[ReimbursementFileResponse] = []
 
     class Config:
         from_attributes = True
@@ -222,3 +247,4 @@ class AiReimbursementConfirmRequest(BaseModel):
     """AI 报销单确认请求"""
     reimbursement: AiReimbursementDraft
     create_supplier: bool = Field(False, description="是否同时创建收款方")
+    files: Optional[List[ReimbursementFileCreate]] = Field(None, description="附加票据")

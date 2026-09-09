@@ -26,6 +26,8 @@ async def _build_customer_response(customer: Customer) -> CustomerResponse:
         id=customer.id,
         name=customer.name,
         address=customer.address,
+        province=customer.province,
+        customer_type=customer.customer_type,
         category=customer.category,
         status=customer.status,
         remark=customer.remark,
@@ -46,6 +48,8 @@ async def get_customers(
     search: Optional[str] = None,
     category: Optional[str] = None,
     status: Optional[str] = None,
+    province: Optional[str] = None,
+    customer_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """获取客户列表（支持搜索、筛选、分页）"""
@@ -64,6 +68,10 @@ async def get_customers(
         query = query.where(Customer.category == category)
     if status:
         query = query.where(Customer.status == status)
+    if province:
+        query = query.where(Customer.province == province)
+    if customer_type:
+        query = query.where(Customer.customer_type == customer_type)
 
     # 总数
     count_query = select(func.count()).select_from(query.subquery())
@@ -82,6 +90,51 @@ async def get_customers(
         total=total,
         items=[await _build_customer_response(c) for c in customers]
     )
+
+
+@router.get("/distribution", response_model=dict)
+async def get_customer_distribution(
+    category: Optional[str] = None,
+    customer_type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取客户省份分布统计"""
+    query = select(Customer.province, func.count(Customer.id)).where(Customer.province.isnot(None)).where(Customer.province != "")
+
+    if category:
+        query = query.where(Customer.category == category)
+    if customer_type:
+        query = query.where(Customer.customer_type == customer_type)
+
+    query = query.group_by(Customer.province)
+    result = await db.execute(query)
+    rows = result.all()
+
+    distribution = {}
+    for province, count in rows:
+        if province:
+            distribution[province] = count
+
+    # Also get counts by customer_type for each province
+    type_query = select(Customer.province, Customer.customer_type, func.count(Customer.id)).where(Customer.province.isnot(None)).where(Customer.province != "")
+    if category:
+        type_query = type_query.where(Customer.category == category)
+    type_query = type_query.group_by(Customer.province, Customer.customer_type)
+    type_result = await db.execute(type_query)
+    type_rows = type_result.all()
+
+    type_distribution = {}
+    for province, ctype, count in type_rows:
+        if province:
+            if province not in type_distribution:
+                type_distribution[province] = {}
+            type_distribution[province][ctype or "unknown"] = count
+
+    return {
+        "distribution": distribution,
+        "type_distribution": type_distribution,
+        "total_with_province": sum(distribution.values()),
+    }
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)

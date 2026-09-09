@@ -1,5 +1,6 @@
 *.db
 *.db-journal
+data/cert_encryption.key
 venv/
 # Playwright MCP artifacts
 .playwright-mcp/

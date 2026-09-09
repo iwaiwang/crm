@@ -17,6 +17,11 @@ class CustomerStatus(str, Enum):
     LOST = "lost"
 
 
+class CustomerType(str, Enum):
+    HOSPITAL = "hospital"
+    AGENT = "agent"
+
+
 # ── 联系人 Schema ──────────────────────────────────────────────
 
 class ContactBase(BaseModel):
@@ -56,6 +61,8 @@ class ContactResponse(ContactBase):
 class CustomerBase(BaseModel):
     name: str = Field(..., description="客户名称", max_length=200)
     address: Optional[str] = Field(None, description="地址")
+    province: Optional[str] = Field(None, description="所属省份", max_length=50)
+    customer_type: Optional[CustomerType] = Field(None, description="客户类型: hospital=医院, agent=代理商")
     category: CustomerCategory = Field(default=CustomerCategory.NORMAL, description="客户分类")
     status: CustomerStatus = Field(default=CustomerStatus.ACTIVE, description="客户状态")
     remark: Optional[str] = Field(None, description="备注")
@@ -68,6 +75,8 @@ class CustomerCreate(CustomerBase):
 class CustomerUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     address: Optional[str] = None
+    province: Optional[str] = Field(None, max_length=50)
+    customer_type: Optional[CustomerType] = None
     category: Optional[CustomerCategory] = None
     status: Optional[CustomerStatus] = None
     remark: Optional[str] = None

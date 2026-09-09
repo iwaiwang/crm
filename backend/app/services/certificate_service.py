@@ -12,9 +12,15 @@ from cryptography.hazmat.backends import default_backend
 
 _ENCRYPTION_KEY = None
 
+_KEY_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "data",
+    "cert_encryption.key",
+)
+
 
 def _get_encryption_key() -> bytes:
-    """获取或生成 AES 加密密钥。优先从环境变量读取，否则从数据库 settings 读取，否则生成并存储。"""
+    """获取或生成 AES 加密密钥。优先从环境变量读取，否则从本地文件读取，否则生成并持久化。"""
     global _ENCRYPTION_KEY
     if _ENCRYPTION_KEY is not None:
         return _ENCRYPTION_KEY
@@ -22,8 +28,14 @@ def _get_encryption_key() -> bytes:
     if env_key:
         _ENCRYPTION_KEY = env_key.encode("utf-8")[:32].ljust(32, b"\x00")
         return _ENCRYPTION_KEY
-    # Fallback: generate a random key (persisted to settings on first use)
+    if os.path.exists(_KEY_FILE):
+        with open(_KEY_FILE, "rb") as f:
+            _ENCRYPTION_KEY = f.read()
+        return _ENCRYPTION_KEY
     _ENCRYPTION_KEY = os.urandom(32)
+    os.makedirs(os.path.dirname(_KEY_FILE), exist_ok=True)
+    with open(_KEY_FILE, "wb") as f:
+        f.write(_ENCRYPTION_KEY)
     return _ENCRYPTION_KEY
 
 

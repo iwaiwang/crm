@@ -80,8 +80,8 @@ INVOICE_SYSTEM_PROMPT = """你是一个专业的发票信息提取助手。请�
 
 需要提取的字段：
 - invoice_type: 发票类型（增值税专用发票/增值税普通发票/电子发票等）
-- invoice_code: 发票代码（10-12 位）
-- invoice_number: 发票号码（8 位）
+- invoice_code: 发票代码（数电票为 20 位，传统发票为 10-12 位）
+- invoice_number: 发票号码（数电票为 20 位，传统发票为 8 位）
 - invoice_date: 开票日期 (YYYY-MM-DD)
 - check_code: 校验码后 6 位
 - amount: 金额（不含税，数字）
@@ -98,8 +98,8 @@ INVOICE_SYSTEM_PROMPT = """你是一个专业的发票信息提取助手。请�
 {
     "data": {
         "invoice_type": "增值税专用发票",
-        "invoice_code": "1100123456",
-        "invoice_number": "12345678",
+        "invoice_code": "12345678901234567890",
+        "invoice_number": "12345678901234567890",
         "invoice_date": "2024-01-15",
         "check_code": "123456",
         "amount": 10000,
@@ -124,8 +124,8 @@ INVOICE_TEXT_PROMPT = """你是一个专业的发票信息提取助手。请从�
 
 需要提取的字段：
 - invoice_type: 发票类型（如：增值税专用发票、增值税普通发票、电子普通发票等）
-- invoice_code: 发票代码（10-12 位数字）
-- invoice_number: 发票号码（8 位数字）
+- invoice_code: 发票代码（数电票为 20 位数字，传统发票为 10-12 位数字）
+- invoice_number: 发票号码（数电票为 20 位数字，传统发票为 8 位数字）
 - invoice_date: 开票日期 (YYYY-MM-DD)
 - check_code: 校验码后 6 位
 - amount: 金额（不含税，数字）
@@ -142,8 +142,8 @@ INVOICE_TEXT_PROMPT = """你是一个专业的发票信息提取助手。请从�
 {
     "data": {
         "invoice_type": "增值税专用发票",
-        "invoice_code": "1100123456",
-        "invoice_number": "12345678",
+        "invoice_code": "12345678901234567890",
+        "invoice_number": "12345678901234567890",
         "invoice_date": "2024-01-15",
         "check_code": "123456",
         "amount": 10000,

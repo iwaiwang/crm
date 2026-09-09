@@ -23,6 +23,12 @@ class Customer(Base):
         default="active",
         comment="客户状态",
     )
+    province = Column(String(50), nullable=True, comment="所属省份")
+    customer_type = Column(
+        SQLEnum("hospital", "agent", name="customer_type"),
+        nullable=True,
+        comment="客户类型: hospital=医院(终端用户), agent=代理商",
+    )
     remark = Column(Text, comment="备注")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(

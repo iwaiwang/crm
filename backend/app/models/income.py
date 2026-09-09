@@ -39,7 +39,7 @@ class Income(Base):
     income_date = Column(Date, nullable=False, comment="收入日期")
     income_year = Column(String(4), nullable=False, comment="收入年份")
     income_category = Column(
-        SQLEnum("sales", "service", "refund", "other", name="income_category"),
+        String(50),
         default="sales",
         comment="收入分类"
     )

@@ -9,6 +9,7 @@
           <img v-else src="/pyxis-logo.svg" class="logo-img" />
         </div>
         <p class="brand-name">{{ companyName }}</p>
+        <p class="brand-version">v{{ appVersion }} · build {{ buildId }}{{ gitHash !== 'dev' ? ' · ' + gitHash : '' }}</p>
       </div>
     </div>
 
@@ -130,6 +131,9 @@ const otpCode = ref('')
 const companyName = ref('菲克希斯科技')
 const companyLogo = ref('')
 const currentYear = new Date().getFullYear()
+const appVersion = __APP_VERSION__
+const buildId = __BUILD_ID__
+const gitHash = __GIT_HASH__
 
 const loginForm = reactive({
   username: '',
@@ -306,6 +310,15 @@ onMounted(() => {
   font-weight: 500;
   letter-spacing: 0.12em;
   color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.brand-version {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.35);
   text-align: center;
 }
 

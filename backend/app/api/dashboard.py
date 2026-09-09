@@ -1,7 +1,10 @@
 """数据分析仪表盘 API"""
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract, and_
+from sqlalchemy import select, func, extract, and_, or_
+from sqlalchemy.orm import selectinload
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from typing import Optional
@@ -34,6 +37,13 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """获取仪表盘统计数据"""
+    # 证书是面向医院运维的外围功能，其统计失败不能拖垮整个仪表盘
+    try:
+        certificates = await get_certificate_stats(db)
+    except Exception:
+        logging.getLogger(__name__).exception("证书统计计算失败，已隔离，不影响仪表盘其他数据")
+        certificates = CertificateStats()
+
     return DashboardStats(
         customers=await get_customer_stats(db),
         contracts=await get_contract_stats(db, year),
@@ -42,37 +52,35 @@ async def get_dashboard_stats(
         inventory=await get_inventory_stats(db),
         projects=await get_project_stats(db),
         cashflow=await get_cashflow_stats(db, year),
-        certificates=await get_certificate_stats(db),
+        certificates=certificates,
     )
 
 
 async def get_certificate_stats(db: AsyncSession) -> CertificateStats:
-    """证书统计 — 含即将过期和已过期的证书列表"""
+    """证书统计 — 纯只读，按日期计算有效期状态。
+
+    证书是面向医院运维的外围功能，这里不做任何写操作（不自动改状态、不 commit），
+    避免与仪表盘读取/系统启动强耦合。
+    """
     today = date.today()
     thirty_days = today + relativedelta(days=30)
 
-    # Auto-expire: transition active certs past end_date
-    expired_result = await db.execute(
-        select(Certificate).where(
-            and_(Certificate.status == "active", Certificate.end_date < today)
-        )
-    )
-    expired_certs = expired_result.scalars().all()
-    for c in expired_certs:
-        c.status = "expired"
-    if expired_certs:
-        await db.commit()
-
-    # Active count
+    # 有效证书（已签发且仍在有效期内）
     active_result = await db.execute(
-        select(func.count()).select_from(Certificate).where(Certificate.status == "active")
+        select(func.count()).select_from(Certificate).where(
+            and_(Certificate.status == "active", Certificate.end_date >= today)
+        )
     )
     active_count = active_result.scalar() or 0
 
-    # Expiring soon (within 30 days)
+    # 即将过期（30 天内）
     expiring_result = await db.execute(
-        select(Certificate).where(
-            and_(Certificate.status == "active", Certificate.end_date <= thirty_days, Certificate.end_date >= today)
+        select(Certificate).options(selectinload(Certificate.customer)).where(
+            and_(
+                Certificate.status == "active",
+                Certificate.end_date >= today,
+                Certificate.end_date <= thirty_days,
+            )
         ).order_by(Certificate.end_date.asc())
     )
     expiring_certs = expiring_result.scalars().all()
@@ -88,11 +96,16 @@ async def get_certificate_stats(db: AsyncSession) -> CertificateStats:
             days_remaining=days_remaining,
         ))
 
-    # Already expired (status=expired)
-    expired_list_result = await db.execute(
-        select(Certificate).where(Certificate.status == "expired").order_by(Certificate.end_date.desc())
+    # 已过期（签发后超过有效期；同时兼容历史上已标记为 expired 的记录）
+    expired_result = await db.execute(
+        select(Certificate).options(selectinload(Certificate.customer)).where(
+            or_(
+                Certificate.status == "expired",
+                and_(Certificate.status == "active", Certificate.end_date < today),
+            )
+        ).order_by(Certificate.end_date.desc())
     )
-    expired_list = expired_list_result.scalars().all()
+    expired_list = expired_result.scalars().all()
     expired_items = []
     for c in expired_list:
         customer_name = c.customer.name if c.customer else ""

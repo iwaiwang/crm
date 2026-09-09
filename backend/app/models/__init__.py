@@ -1,6 +1,7 @@
 """Database models."""
 from app.models.customer import Customer
 from app.models.customer_contact import CustomerContact
+from app.models.certificate import Certificate
 from app.models.contract import Contract
 from app.models.contract_file import ContractFile
 from app.models.invoice import Invoice
@@ -12,11 +13,13 @@ from app.models.income import Income
 from app.models.expense import Expense
 from app.models.setting import Setting
 from app.models.reimbursement import Reimbursement
+from app.models.reimbursement_file import ReimbursementFile
 from app.models.supplier import Supplier
 
 __all__ = [
     "Customer",
     "CustomerContact",
+    "Certificate",
     "Contract",
     "ContractFile",
     "Invoice",
@@ -32,5 +35,6 @@ __all__ = [
     "Expense",
     "Setting",
     "Reimbursement",
+    "ReimbursementFile",
     "Supplier",
 ]

@@ -1,6 +1,6 @@
 """支出模型"""
 from enum import Enum
-from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, Text, DECIMAL, Date, ForeignKey, Float, Boolean
+from sqlalchemy import Column, String, DateTime, Text, DECIMAL, Date, ForeignKey, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -40,13 +40,10 @@ class Expense(Base):
     total_amount = Column(DECIMAL(15, 2), nullable=False, default=0, comment="价税合计")
     expense_date = Column(Date, nullable=False, comment="支出日期")
     expense_year = Column(String(4), nullable=False, comment="支出年份")
+    # 用 String 而非 Enum 存储：分类由 Pydantic 在接口层校验，
+    # 存储层保持宽松，避免历史脏数据导致读取整表失败
     expense_category = Column(
-        SQLEnum(
-            "catering", "travel", "procurement", "office", "rent",
-            "utilities", "salary", "marketing", "software", "maintenance",
-            "training", "entertainment", "logistics", "other",
-            name="expense_category"
-        ),
+        String(50),
         default="other",
         comment="支出分类"
     )

@@ -32,6 +32,17 @@
             <el-option label="流失" value="lost" />
           </el-select>
         </el-form-item>
+        <el-form-item label="省份">
+          <el-select v-model="searchForm.province" placeholder="全部省份" clearable filterable>
+            <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="searchForm.customer_type" placeholder="全部类型" clearable>
+            <el-option label="医院" value="hospital" />
+            <el-option label="代理商" value="agent" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -47,9 +58,9 @@
         <el-button type="danger" size="small" @click="handleBatchDelete">批量删除</el-button>
       </div>
 
-      <el-table :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+      <el-table :data="displayData" v-loading="loading" border stripe @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="name" label="客户名称" min-width="150" />
+        <el-table-column prop="name" label="客户名称" min-width="150" sortable="custom" />
         <el-table-column label="联系人" min-width="180">
           <template #default="{ row }">
             <div v-if="row.contacts && row.contacts.length > 0">
@@ -70,14 +81,26 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="分类" width="80">
+        <el-table-column prop="province" label="省份" width="80" sortable="custom">
+          <template #default="{ row }">
+            <span>{{ row.province || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="customer_type" label="类型" width="80" sortable="custom">
+          <template #default="{ row }">
+            <el-tag v-if="row.customer_type === 'hospital'" type="primary" effect="plain">医院</el-tag>
+            <el-tag v-else-if="row.customer_type === 'agent'" effect="plain">代理商</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="category" label="分类" width="80" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="getCategoryType(row.category)">
               {{ getCategoryLabel(row.category) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column prop="status" label="状态" width="80" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
               {{ getStatusLabel(row.status) }}
@@ -118,6 +141,18 @@
         </el-form-item>
         <el-form-item label="地址" prop="address">
           <el-input v-model="formData.address" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="省份" prop="province">
+          <el-select v-model="formData.province" placeholder="请选择省份" clearable filterable>
+            <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型" prop="customer_type">
+          <el-radio-group v-model="formData.customer_type">
+            <el-radio label="hospital">医院（终端用户）</el-radio>
+            <el-radio label="agent">代理商</el-radio>
+          </el-radio-group>
+          <el-button v-if="formData.customer_type" link size="small" @click="formData.customer_type = null">清除</el-button>
         </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-radio-group v-model="formData.category">
@@ -197,12 +232,44 @@ const submitting = ref(false)
 const showDialog = ref(false)
 const formRef = ref(null)
 const tableData = ref([])
+const displayData = ref([])
 const selectedItems = ref([])
+
+const collator = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true })
+const sortState = ref({ prop: null, order: null })
+
+function applySort() {
+  const { prop, order } = sortState.value
+  if (!prop || !order) {
+    displayData.value = [...tableData.value]
+    return
+  }
+  const arr = [...displayData.value]
+  arr.sort((a, b) => {
+    let va = a[prop] ?? ''
+    let vb = b[prop] ?? ''
+    let cmp = collator.compare(String(va), String(vb))
+    return order === 'ascending' ? cmp : -cmp
+  })
+  displayData.value = arr
+}
+
+const provinces = [
+  '北京', '天津', '河北', '山西', '内蒙古',
+  '辽宁', '吉林', '黑龙江',
+  '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东',
+  '河南', '湖北', '湖南', '广东', '广西', '海南',
+  '重庆', '四川', '贵州', '云南', '西藏',
+  '陕西', '甘肃', '青海', '宁夏', '新疆',
+  '台湾', '香港', '澳门',
+]
 
 const searchForm = reactive({
   search: '',
   category: '',
   status: '',
+  province: '',
+  customer_type: '',
 })
 
 const pagination = reactive({
@@ -225,6 +292,8 @@ const formData = reactive({
   id: '',
   name: '',
   address: '',
+  province: null,
+  customer_type: null,
   category: 'normal',
   status: 'active',
   remark: '',
@@ -253,12 +322,19 @@ const loadCustomers = async () => {
     }
     const res = await getCustomers(params)
     tableData.value = res.items
+    displayData.value = [...res.items]
+    sortState.value = { prop: null, order: null }
     pagination.total = res.total
   } catch (error) {
     console.error('加载客户列表失败:', error)
   } finally {
     loading.value = false
   }
+}
+
+const handleSortChange = ({ prop, order }) => {
+  sortState.value = { prop, order }
+  applySort()
 }
 
 const handleSearch = () => {
@@ -270,6 +346,8 @@ const handleReset = () => {
   searchForm.search = ''
   searchForm.category = ''
   searchForm.status = ''
+  searchForm.province = ''
+  searchForm.customer_type = ''
   handleSearch()
 }
 
@@ -279,6 +357,8 @@ const openAddDialog = () => {
     id: '',
     name: '',
     address: '',
+    province: null,
+    customer_type: null,
     category: 'normal',
     status: 'active',
     remark: '',
@@ -295,6 +375,8 @@ const handleEdit = (row) => {
     id: row.id,
     name: row.name,
     address: row.address,
+    province: row.province || null,
+    customer_type: row.customer_type || null,
     category: row.category,
     status: row.status,
     remark: row.remark,
@@ -363,6 +445,8 @@ const handleSubmit = async () => {
         const payload = {
           name: formData.name,
           address: formData.address,
+          province: formData.province || null,
+          customer_type: formData.customer_type || null,
           category: formData.category,
           status: formData.status,
           remark: formData.remark,
@@ -381,7 +465,9 @@ const handleSubmit = async () => {
           await updateCustomer(formData.id, {
             name: payload.name,
             address: payload.address,
+            province: payload.province,
             category: payload.category,
+            customer_type: payload.customer_type,
             status: payload.status,
             remark: payload.remark,
           })

@@ -16,10 +16,14 @@
           <el-icon><DataLine /></el-icon>
           <span>仪表盘</span>
         </el-menu-item>
-        <el-menu-item index="/customers" v-if="hasPermission('customers')">
-          <el-icon><User /></el-icon>
-          <span>客户管理</span>
-        </el-menu-item>
+        <el-sub-menu index="customers" v-if="hasPermission('customers')">
+          <template #title>
+            <el-icon><User /></el-icon>
+            <span>客户管理</span>
+          </template>
+          <el-menu-item index="/customers">客户列表</el-menu-item>
+          <el-menu-item index="/customers/map">客户分布</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/contracts" v-if="hasPermission('contracts')">
           <el-icon><Document /></el-icon>
           <span>合同管理</span>

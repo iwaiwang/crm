@@ -3,7 +3,7 @@ import io
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract
+from sqlalchemy import select, func, extract, delete
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import date, datetime
@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 from app.database import get_db
 from app.models.reimbursement import Reimbursement
+from app.models.reimbursement_file import ReimbursementFile
 from app.models.invoice import Invoice
 from app.models.contract import Contract
 from app.models.expense import Expense
@@ -23,6 +24,8 @@ from app.schemas.reimbursement import (
     ReimbursementCreate,
     ReimbursementUpdate,
     ReimbursementResponse,
+    ReimbursementFileCreate,
+    ReimbursementFileResponse,
     ReimbursementListResponse,
     ReimbursementReject,
     ReimbursementApprove,
@@ -41,6 +44,18 @@ from app.schemas.setting import SettingKeys
 from app.utils.helpers import clean_text, to_decimal, to_date
 
 router = APIRouter()
+
+# 管理员在「已审核/已支付」状态下可编辑的字段白名单
+ADMIN_POST_APPROVAL_EDITABLE_FIELDS = {
+    "invoice_id",
+    "remark",
+    "supplier_bank_name",
+    "supplier_bank_branch",
+    "supplier_bank_province",
+    "supplier_bank_city",
+    "supplier_bank_code",
+    "supplier_bank_account",
+}
 
 
 async def _get_setting_value(db: AsyncSession, key: str) -> Optional[str]:
@@ -121,6 +136,49 @@ def _get_category_label(category: str, categories: Optional[List[dict]] = None) 
     return REIMBURSEMENT_CATEGORY_LABELS.get(category, category)
 
 
+def _collect_file_entries(primary_file_id, primary_file_url, files):
+    """合并主文件(file_id)与附件列表(files)，按 file_id 去重，主文件在前"""
+    file_map = {f.file_id: f for f in (files or []) if f.file_id}
+    entries = []
+    seen = set()
+
+    def add(entry):
+        entries.append(entry)
+        seen.add(entry["file_id"])
+
+    if primary_file_id:
+        match = file_map.get(primary_file_id)
+        add({
+            "file_id": primary_file_id,
+            "file_url": primary_file_url or (match.file_url if match else None),
+            "file_name": match.file_name if match else None,
+            "file_type": match.file_type if match else None,
+            "file_size": match.file_size if match else None,
+        })
+    for f in (files or []):
+        if f.file_id and f.file_id not in seen:
+            add(f.model_dump())
+    return entries
+
+
+async def _persist_files(db, reimbursement, entries):
+    """重建报销单附件"""
+    await db.execute(
+        delete(ReimbursementFile).where(ReimbursementFile.reimbursement_id == reimbursement.id)
+    )
+    for idx, entry in enumerate(entries):
+        db.add(ReimbursementFile(reimbursement_id=reimbursement.id, sort_order=idx, **entry))
+
+
+async def _get_reimbursement_with_files(db, reimbursement_id):
+    result = await db.execute(
+        select(Reimbursement)
+        .options(selectinload(Reimbursement.files))
+        .where(Reimbursement.id == reimbursement_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def _enrich_reimbursement_response(
     db: AsyncSession,
     reimbursement: Reimbursement,
@@ -146,6 +204,26 @@ async def _enrich_reimbursement_response(
         payer_result = await db.execute(select(User).where(User.id == reimbursement.paid_by))
         payer = payer_result.scalar_one_or_none()
         response_data["payer_name"] = payer.username if payer else None
+
+    # 获取关联发票号
+    if reimbursement.invoice_id:
+        invoice_result = await db.execute(select(Invoice).where(Invoice.id == reimbursement.invoice_id))
+        invoice = invoice_result.scalar_one_or_none()
+        if invoice:
+            response_data["invoice_no"] = invoice.invoice_no
+            response_data["invoice_code"] = invoice.invoice_code
+
+    # 兼容旧数据：无附件记录但有主文件时，合成一条附件
+    if not response_data.get("files") and reimbursement.file_id:
+        response_data["files"] = [{
+            "id": None,
+            "file_id": reimbursement.file_id,
+            "file_name": None,
+            "file_url": reimbursement.file_url,
+            "file_type": None,
+            "file_size": None,
+            "sort_order": 0,
+        }]
 
     if current_user:
         can_approve = await _can_approve_reimbursements(db, current_user)
@@ -174,7 +252,7 @@ async def get_reimbursements(
     can_view_all = await _can_view_all_reimbursements(db, current_user)
 
     # 构建基础查询
-    query = select(Reimbursement)
+    query = select(Reimbursement).options(selectinload(Reimbursement.files))
 
     # 普通用户只能看自己创建的；指定审核/支付人可看全部
     if not can_view_all:
@@ -473,7 +551,11 @@ async def get_reimbursement(
     current_user: User = Depends(get_current_user),
 ):
     """获取报销单详情"""
-    result = await db.execute(select(Reimbursement).where(Reimbursement.id == reimbursement_id))
+    result = await db.execute(
+        select(Reimbursement)
+        .options(selectinload(Reimbursement.files))
+        .where(Reimbursement.id == reimbursement_id)
+    )
     reimbursement = result.scalar_one_or_none()
 
     if not reimbursement:
@@ -520,14 +602,24 @@ async def create_reimbursement(
         reimbursement.supplier_tax_id = None
 
     # 创建报销单
+    data = reimbursement.model_dump(exclude={"files"})
     db_reimbursement = Reimbursement(
-        **reimbursement.model_dump(),
+        **data,
         created_by=current_user.id,
         status="draft",
     )
     db.add(db_reimbursement)
+    await db.flush()
+
+    # 附件：主文件 + 附件列表
+    entries = _collect_file_entries(reimbursement.file_id, reimbursement.file_url, reimbursement.files)
+    if entries:
+        await _persist_files(db, db_reimbursement, entries)
+        db_reimbursement.file_id = entries[0]["file_id"]
+        db_reimbursement.file_url = entries[0]["file_url"]
+
     await db.commit()
-    await db.refresh(db_reimbursement)
+    db_reimbursement = await _get_reimbursement_with_files(db, db_reimbursement.id)
 
     return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
@@ -547,6 +639,7 @@ async def update_reimbursement(
         raise HTTPException(status_code=404, detail="报销单不存在")
 
     # 权限和状态检查
+    is_post_approval = db_reimbursement.status in ("approved", "paid")
     if current_user.role != "admin":
         # 普通用户只能编辑自己的草稿或驳回状态
         if db_reimbursement.created_by != current_user.id:
@@ -554,14 +647,33 @@ async def update_reimbursement(
         if db_reimbursement.status not in ("draft", "rejected"):
             raise HTTPException(status_code=400, detail="只能编辑草稿或驳回状态的报销单")
     else:
-        # 管理员可以编辑草稿和驳回状态
-        if db_reimbursement.status not in ("draft", "rejected"):
-            raise HTTPException(status_code=400, detail="只能编辑草稿或驳回状态的报销单")
+        # 管理员：草稿/驳回可全量编辑；已审核/已支付仅部分字段
+        if db_reimbursement.status not in ("draft", "rejected", "approved", "paid"):
+            raise HTTPException(status_code=400, detail="当前状态不允许编辑")
 
-    # 更新字段
-    update_data = reimbursement.model_dump(exclude_unset=True)
+    # 更新字段（files 是关系，单独处理）
+    files_payload = reimbursement.files
+    update_data = reimbursement.model_dump(exclude_unset=True, exclude={"files"})
+
+    # 已审核/已支付状态下，管理员只能修改白名单字段
+    if is_post_approval:
+        update_data = {k: v for k, v in update_data.items() if k in ADMIN_POST_APPROVAL_EDITABLE_FIELDS}
+
     for field, value in update_data.items():
         setattr(db_reimbursement, field, value)
+
+    # 附件：客户端显式传入 files 时重建
+    if files_payload is not None:
+        primary_file_id = update_data.get("file_id") if "file_id" in update_data else None
+        primary_file_url = update_data.get("file_url") if "file_url" in update_data else None
+        entries = _collect_file_entries(primary_file_id, primary_file_url, files_payload)
+        await _persist_files(db, db_reimbursement, entries)
+        if entries:
+            db_reimbursement.file_id = entries[0]["file_id"]
+            db_reimbursement.file_url = entries[0]["file_url"]
+        else:
+            db_reimbursement.file_id = None
+            db_reimbursement.file_url = None
 
     # 报销种类业务规则：津贴场景强制非税、分类为差旅、税号清空
     effective_kind = update_data.get("reimbursement_kind", None) or db_reimbursement.reimbursement_kind
@@ -580,7 +692,7 @@ async def update_reimbursement(
         db_reimbursement.reject_reason = None
 
     await db.commit()
-    await db.refresh(db_reimbursement)
+    db_reimbursement = await _get_reimbursement_with_files(db, db_reimbursement.id)
 
     return await _enrich_reimbursement_response(db, db_reimbursement, current_user)
 
@@ -608,6 +720,9 @@ async def delete_reimbursement(
         if db_reimbursement.status != "draft":
             raise HTTPException(status_code=400, detail="只能删除草稿状态的报销单")
 
+    await db.execute(
+        delete(ReimbursementFile).where(ReimbursementFile.reimbursement_id == reimbursement_id)
+    )
     await db.delete(db_reimbursement)
     await db.commit()
 

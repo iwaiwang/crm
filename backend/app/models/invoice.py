@@ -12,7 +12,7 @@ class Invoice(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     invoice_code = Column(String(20), comment="发票代码 (10-12 位)")
-    invoice_number = Column(String(20), comment="发票号码 (8 位)")
+    invoice_number = Column(String(20), comment="发票号码")
     check_code = Column(String(20), comment="校验码后 6 位")
     invoice_date = Column(Date, comment="开票日期")
     invoice_no = Column(String(50), unique=True, comment="发票号码")

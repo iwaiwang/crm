@@ -6,6 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --registry=https://registry.npmmirror.com
 
+RUN apk add --no-cache git
+
 COPY . .
 RUN npm run build
 

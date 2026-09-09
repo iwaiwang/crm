@@ -124,9 +124,7 @@
         </el-table-column>
         <el-table-column label="编号" width="120">
           <template #default="{ row }">
-            <el-tooltip :content="row.id" placement="top">
-              <span class="reim-id" @click="copyId(row.id)">{{ formatId(row.id) }}</span>
-            </el-tooltip>
+            <span class="reim-id" @click="openDetail(row)">{{ formatId(row.id) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="supplier_name" label="供应商/收款方" width="150" />
@@ -154,8 +152,14 @@
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="isAdmin && (row.status === 'approved' || row.status === 'paid')"
+              link
+              type="warning"
+              @click="openAdminEdit(row)"
+            >补充修改</el-button>
             <template v-if="row.status === 'draft'">
               <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
               <el-button link type="success" @click="handleSubmit(row)">提交</el-button>
@@ -173,7 +177,7 @@
               <el-button link type="info" @click="showRejectReason(row)">查看原因</el-button>
             </template>
             <template v-else-if="row.status === 'paid'">
-              <el-button link type="info" @click="handleView(row)">查看</el-button>
+              <el-button link type="info" @click="openDetail(row)">查看</el-button>
             </template>
           </template>
         </el-table-column>
@@ -360,13 +364,11 @@
         <!-- 附件上传 -->
         <el-divider content-position="left">附件</el-divider>
         <el-form-item label="发票/票据文件">
-          <DocumentUploader
-            type="invoice"
-            :initial-value="fileInfo"
-            :refresh-key="documentUploaderKey"
-            :show-ai-parse="false"
-            accept-types=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-            @change="handleFileChange"
+          <AttachmentUploader
+            :initial-value="formData.files"
+            :refresh-key="attachmentUploaderKey"
+            accept-types=".pdf,.jpg,.jpeg,.png"
+            @change="handleAttachmentChange"
           />
         </el-form-item>
 
@@ -412,16 +414,178 @@
       </template>
     </el-dialog>
     <AiReimbursementImportDrawer v-model="showAiImportDrawer" @success="handleAiImportSuccess" />
+
+    <!-- 详情抽屉 -->
+    <el-drawer v-model="showDetailDrawer" direction="rtl" size="520px" :with-header="false">
+      <div class="detail-drawer" v-loading="detailLoading">
+        <template v-if="detailData">
+          <div class="detail-header">
+            <div class="detail-title">
+              <span class="detail-id">{{ formatId(detailData.id) }}</span>
+              <el-tag :type="getStatusType(detailData.status)">{{ getStatusLabel(detailData.status) }}</el-tag>
+              <el-tag size="small" effect="plain">{{ getKindLabel(detailData.reimbursement_kind) }}</el-tag>
+            </div>
+            <div class="detail-id-full">{{ detailData.id }}</div>
+          </div>
+
+          <el-divider content-position="left">基本信息</el-divider>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="供应商/收款方">{{ detailData.supplier_name || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="支付方">{{ detailData.payer_company || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="报销金额(不含税)">¥{{ Number(detailData.amount || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item v-if="detailData.reimbursement_kind !== 'allowance_travel'" label="税额">¥{{ Number(detailData.tax_amount || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="价税合计">¥{{ Number(detailData.total_amount || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="费用分类">{{ getCategoryLabel(detailData.expense_category) }}</el-descriptions-item>
+            <template v-if="detailData.reimbursement_kind === 'allowance_travel'">
+              <el-descriptions-item label="出差开始">{{ detailData.travel_start_date || '—' }}</el-descriptions-item>
+              <el-descriptions-item label="出差结束">{{ detailData.travel_end_date || '—' }}</el-descriptions-item>
+              <el-descriptions-item label="出差地点">{{ detailData.travel_destination || '—' }}</el-descriptions-item>
+            </template>
+            <el-descriptions-item label="备注">{{ detailData.remark || '—' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">收款账号</el-divider>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="税号">{{ detailData.supplier_tax_id || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="开户行">{{ detailData.supplier_bank_name || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="支行">{{ detailData.supplier_bank_branch || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="开户行省份">{{ detailData.supplier_bank_province || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="开户行城市">{{ detailData.supplier_bank_city || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="联行号">{{ detailData.supplier_bank_code || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="银行账号">{{ detailData.supplier_bank_account || '—' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">发票附件</el-divider>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="关联发票号">{{ detailData.invoice_no || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="发票代码">{{ detailData.invoice_code || '—' }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="detail-files" v-if="detailData.files && detailData.files.length">
+            <div class="detail-file-item" v-for="f in detailData.files" :key="f.file_id">
+              <span class="detail-file-name">{{ f.file_name || '票据附件' }}</span>
+              <el-button link type="primary" @click="openFile(f.file_url)">
+                <el-icon><Document /></el-icon> 查看
+              </el-button>
+            </div>
+          </div>
+          <div v-else class="detail-empty">未上传附件</div>
+
+          <el-divider content-position="left">操作信息</el-divider>
+          <el-timeline>
+            <el-timeline-item :timestamp="formatDate(detailData.created_at)" type="primary">
+              录入 — {{ detailData.creator_name || '—' }}
+            </el-timeline-item>
+            <el-timeline-item
+              v-if="detailData.status === 'rejected'"
+              :timestamp="detailData.approved_at ? formatDate(detailData.approved_at) : ''"
+              type="danger"
+            >
+              已驳回 — {{ detailData.approver_name || '—' }}
+              <div v-if="detailData.reject_reason" class="reject-reason">原因：{{ detailData.reject_reason }}</div>
+            </el-timeline-item>
+            <el-timeline-item
+              v-else-if="detailData.approved_at"
+              :timestamp="formatDate(detailData.approved_at)"
+              type="success"
+            >
+              审核通过 — {{ detailData.approver_name || '—' }}
+            </el-timeline-item>
+            <el-timeline-item
+              v-if="detailData.paid_at"
+              :timestamp="formatDate(detailData.paid_at)"
+              type="success"
+            >
+              确认支付 — {{ detailData.payer_name || '—' }}
+            </el-timeline-item>
+          </el-timeline>
+        </template>
+      </div>
+      <template #footer>
+        <el-button
+          v-if="isAdmin && detailData && (detailData.status === 'approved' || detailData.status === 'paid')"
+          type="warning"
+          @click="editFromDetail"
+        >补充修改</el-button>
+        <el-button @click="showDetailDrawer = false">关闭</el-button>
+      </template>
+    </el-drawer>
+
+    <!-- 管理员补充修改抽屉（已审核/已支付） -->
+    <el-drawer v-model="showAdminEdit" direction="rtl" size="520px" title="补充修改报销单">
+      <el-form :model="adminEditForm" label-width="120px">
+        <el-divider content-position="left">关联信息</el-divider>
+        <el-form-item label="关联发票">
+          <el-select v-model="adminEditForm.invoice_id" placeholder="选择进项发票（可选）" clearable style="width: 100%">
+            <el-option v-for="inv in purchaseInvoices" :key="inv.id" :label="inv.invoice_no" :value="inv.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="adminEditForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+
+        <el-divider content-position="left">银行信息</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="开户行">
+              <el-input v-model="adminEditForm.supplier_bank_name" placeholder="开户银行名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="支行">
+              <el-input v-model="adminEditForm.supplier_bank_branch" placeholder="支行名称" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="开户行省份">
+              <el-input v-model="adminEditForm.supplier_bank_province" placeholder="省份" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开户行城市">
+              <el-input v-model="adminEditForm.supplier_bank_city" placeholder="城市" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="联行号">
+              <el-input v-model="adminEditForm.supplier_bank_code" placeholder="12位联行号" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="银行账号">
+          <el-input v-model="adminEditForm.supplier_bank_account" placeholder="银行账号" />
+        </el-form-item>
+
+        <el-divider content-position="left">附件</el-divider>
+        <el-form-item label="票据附件">
+          <AttachmentUploader
+            :initial-value="adminFiles"
+            :refresh-key="adminUploaderKey"
+            accept-types=".pdf,.jpg,.jpeg,.png"
+            @change="handleAdminFilesChange"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAdminEdit = false">取消</el-button>
+        <el-button type="primary" :loading="adminSubmitting" @click="saveAdminEdit">保存</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, MagicStick, Download } from '@element-plus/icons-vue'
+import { Plus, MagicStick, Download, Document } from '@element-plus/icons-vue'
+import { useUserStore } from '@/store/user'
 import * as XLSX from 'xlsx'
 import {
   getReimbursements,
+  getReimbursement,
   createReimbursement,
   updateReimbursement,
   deleteReimbursement,
@@ -437,7 +601,7 @@ import {
 import { getInvoices } from '@/api/invoice'
 import { getContracts } from '@/api/contract'
 import { searchSuppliers } from '@/api/supplier'
-import DocumentUploader from '@/components/DocumentUploader.vue'
+import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AiReimbursementImportDrawer from '@/components/AiReimbursementImportDrawer.vue'
 
 const loading = ref(false)
@@ -446,6 +610,9 @@ const showDialog = ref(false)
 const showAiImportDrawer = ref(false)
 const showApproveDialog = ref(false)
 const showRejectDialog = ref(false)
+const showDetailDrawer = ref(false)
+const detailLoading = ref(false)
+const detailData = ref(null)
 const formRef = ref(null)
 const rejectFormRef = ref(null)
 const tableRef = ref(null)
@@ -455,6 +622,25 @@ const contracts = ref([])
 const payerCompanies = ref([])
 const expenseCategories = ref([])
 const selectedReimbursements = ref([])
+
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.user?.role === 'admin')
+
+const showAdminEdit = ref(false)
+const adminSubmitting = ref(false)
+const adminUploaderKey = ref(0)
+const adminFiles = ref([])
+const adminEditForm = reactive({
+  id: '',
+  remark: '',
+  invoice_id: '',
+  supplier_bank_name: '',
+  supplier_bank_branch: '',
+  supplier_bank_province: '',
+  supplier_bank_city: '',
+  supplier_bank_code: '',
+  supplier_bank_account: '',
+})
 
 const selectedTotalAmount = computed(() => {
   return selectedReimbursements.value.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
@@ -567,8 +753,7 @@ const handleBatchPaymentExport = async () => {
     ElMessage.error('导出批量支付失败')
   }
 }
-const fileInfo = ref(null)
-const documentUploaderKey = ref(0)
+const attachmentUploaderKey = ref(0)
 const statistics = ref({
   total_pending_amount: 0,
   total_approved_amount: 0,
@@ -623,6 +808,7 @@ const formData = reactive({
   remark: '',
   file_id: '',
   file_url: '',
+  files: [],
   reimbursement_kind: 'invoice_company',
   travel_start_date: null,
   travel_end_date: null,
@@ -705,13 +891,23 @@ const formatId = (id) => {
   return `BX-${short}`
 }
 
-const copyId = async (id) => {
+const openDetail = async (row) => {
+  showDetailDrawer.value = true
+  detailData.value = row
+  detailLoading.value = true
   try {
-    await navigator.clipboard.writeText(id)
-    ElMessage.success('已复制完整编号')
-  } catch (e) {
-    ElMessage.warning('复制失败，请手动选择')
+    const res = await getReimbursement(row.id)
+    detailData.value = res
+  } catch (error) {
+    ElMessage.error('加载报销单详情失败')
+  } finally {
+    detailLoading.value = false
   }
+}
+
+const openFile = (url) => {
+  if (!url) return
+  window.open(url, '_blank')
 }
 
 // 收款方自动补全
@@ -852,13 +1048,13 @@ const openAddDialog = () => {
     remark: '',
     file_id: '',
     file_url: '',
+    files: [],
     reimbursement_kind: 'invoice_company',
     travel_start_date: null,
     travel_end_date: null,
     travel_destination: '',
   })
-  fileInfo.value = null
-  documentUploaderKey.value++
+  attachmentUploaderKey.value++
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
@@ -888,23 +1084,19 @@ const handleEdit = (row) => {
     remark: row.remark || '',
     file_id: row.file_id || '',
     file_url: row.file_url || '',
+    files: (row.files || []).map((f) => ({
+      file_id: f.file_id,
+      file_name: f.file_name,
+      file_url: f.file_url,
+      file_type: f.file_type,
+      file_size: f.file_size,
+    })),
     reimbursement_kind: row.reimbursement_kind || 'invoice_company',
     travel_start_date: row.travel_start_date || null,
     travel_end_date: row.travel_end_date || null,
     travel_destination: row.travel_destination || '',
   })
-  // 设置文件信息
-  if (row.file_id && row.file_url) {
-    fileInfo.value = {
-      id: row.file_id,
-      name: row.supplier_name || '报销单',
-      url: row.file_url,
-      type: 'pdf',
-    }
-  } else {
-    fileInfo.value = null
-  }
-  documentUploaderKey.value++
+  attachmentUploaderKey.value++
   // 在打开对话框时加载发票和合同列表
   loadPurchaseInvoices()
   loadContracts()
@@ -912,12 +1104,12 @@ const handleEdit = (row) => {
   loadExpenseCategories()
 }
 
-// 处理文件变化
-const handleFileChange = (file) => {
-  fileInfo.value = file
-  if (file) {
-    formData.file_id = file.id
-    formData.file_url = file.url
+// 处理附件变化（多文件）
+const handleAttachmentChange = (files) => {
+  formData.files = files || []
+  if (formData.files.length) {
+    formData.file_id = formData.files[0].file_id
+    formData.file_url = formData.files[0].file_url
   } else {
     formData.file_id = ''
     formData.file_url = ''
@@ -1058,19 +1250,68 @@ const handleDelete = async (row) => {
   }
 }
 
-const handleView = (row) => {
-  ElMessageBox.alert(`
-    供应商：${row.supplier_name}
-    支付方：${row.payer_company || '未填写'}
-    税号：${row.supplier_tax_id || '未填写'}
-    开户行：${row.supplier_bank_name || '未填写'}
-    银行账号：${row.supplier_bank_account || '未填写'}
-    金额：¥${row.total_amount}
-  `, '报销单详情', { type: 'info' })
-}
-
 const showRejectReason = (row) => {
   ElMessageBox.alert(row.reject_reason || '无驳回原因', '驳回原因', { type: 'warning' })
+}
+
+const editFromDetail = () => {
+  const row = detailData.value
+  showDetailDrawer.value = false
+  if (row) openAdminEdit(row)
+}
+
+const openAdminEdit = (row) => {
+  Object.assign(adminEditForm, {
+    id: row.id,
+    remark: row.remark || '',
+    invoice_id: row.invoice_id || '',
+    supplier_bank_name: row.supplier_bank_name || '',
+    supplier_bank_branch: row.supplier_bank_branch || '',
+    supplier_bank_province: row.supplier_bank_province || '',
+    supplier_bank_city: row.supplier_bank_city || '',
+    supplier_bank_code: row.supplier_bank_code || '',
+    supplier_bank_account: row.supplier_bank_account || '',
+  })
+  adminFiles.value = (row.files || []).map((f) => ({
+    file_id: f.file_id,
+    file_name: f.file_name,
+    file_url: f.file_url,
+    file_type: f.file_type,
+    file_size: f.file_size,
+  }))
+  adminUploaderKey.value++
+  loadPurchaseInvoices()
+  showAdminEdit.value = true
+}
+
+const handleAdminFilesChange = (files) => {
+  adminFiles.value = files || []
+}
+
+const saveAdminEdit = async () => {
+  adminSubmitting.value = true
+  try {
+    const data = {
+      remark: adminEditForm.remark || null,
+      invoice_id: adminEditForm.invoice_id || null,
+      supplier_bank_name: adminEditForm.supplier_bank_name || null,
+      supplier_bank_branch: adminEditForm.supplier_bank_branch || null,
+      supplier_bank_province: adminEditForm.supplier_bank_province || null,
+      supplier_bank_city: adminEditForm.supplier_bank_city || null,
+      supplier_bank_code: adminEditForm.supplier_bank_code || null,
+      supplier_bank_account: adminEditForm.supplier_bank_account || null,
+      files: adminFiles.value,
+    }
+    await updateReimbursement(adminEditForm.id, data)
+    ElMessage.success('保存成功')
+    showAdminEdit.value = false
+    loadReimbursements()
+    loadStatistics()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '保存失败')
+  } finally {
+    adminSubmitting.value = false
+  }
 }
 
 const handleAiImportSuccess = () => {
@@ -1212,6 +1453,72 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   line-height: 1.6;
+  margin-top: 4px;
+}
+
+.detail-drawer {
+  padding: 0 8px;
+}
+
+.detail-header {
+  margin-bottom: 8px;
+}
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.detail-id {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.detail-id-full {
+  font-family: monospace;
+  font-size: 12px;
+  color: #909399;
+  word-break: break-all;
+}
+
+.detail-files {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background-color: #f5f7fa;
+  border-radius: 6px;
+}
+
+.detail-file-name {
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-empty {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #c0c4cc;
+}
+
+.reject-reason {
+  font-size: 12px;
+  color: #f56c6c;
   margin-top: 4px;
 }
 </style>

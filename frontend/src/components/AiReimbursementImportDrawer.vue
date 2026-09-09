@@ -42,6 +42,18 @@
             </div>
           </div>
 
+          <div class="extra-attachments">
+            <div class="panel-heading">
+              <span>附加票据（可多张）</span>
+            </div>
+            <AttachmentUploader
+              :initial-value="attachments"
+              :refresh-key="attachmentUploaderKey"
+              accept-types=".pdf,.jpg,.jpeg,.png"
+              @change="handleAttachmentChange"
+            />
+          </div>
+
           <div class="analysis-box" v-loading="previewLoading">
             <div class="analysis-head">
               <span>AI分析状态</span>
@@ -202,6 +214,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import DocumentUploader from '@/components/DocumentUploader.vue'
+import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import { previewAiReimbursementImport, confirmAiReimbursementImport, getReimbursementPayerCompanies, getReimbursementExpenseCategories } from '@/api/reimbursement'
 import { searchSuppliers } from '@/api/supplier'
 
@@ -216,6 +229,8 @@ const emit = defineEmits(['update:modelValue', 'success'])
 
 const uploaderRefreshKey = ref(0)
 const fileInfo = ref(null)
+const attachments = ref([])
+const attachmentUploaderKey = ref(0)
 const previewLoading = ref(false)
 const previewReady = ref(false)
 const submitting = ref(false)
@@ -313,6 +328,8 @@ const resetState = () => {
   submitting.value = false
   summaryActions.value = []
   uploaderRefreshKey.value += 1
+  attachments.value = []
+  attachmentUploaderKey.value += 1
   Object.assign(form, {
     invoice_no: '',
     invoice_code: '',
@@ -396,6 +413,10 @@ const handleFileChange = async (file) => {
   await runPreview()
 }
 
+const handleAttachmentChange = (files) => {
+  attachments.value = files || []
+}
+
 const confirmImport = async () => {
   submitting.value = true
   try {
@@ -407,6 +428,7 @@ const confirmImport = async () => {
         total_amount: String(toNumber(form.total_amount).toFixed(2)),
       },
       create_supplier: createSupplier.value,
+      files: attachments.value,
     }
     const result = await confirmAiReimbursementImport(payload)
     if (result.invoice_reused) {
@@ -515,7 +537,8 @@ watch(
 
 .analysis-box,
 .linkage-panel,
-.file-summary {
+.file-summary,
+.extra-attachments {
   padding: 18px;
   border-radius: 18px;
   background: #fff;

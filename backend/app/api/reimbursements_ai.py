@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.ai_config import AIConfig
 from app.models.invoice import Invoice
 from app.models.reimbursement import Reimbursement
+from app.models.reimbursement_file import ReimbursementFile
 from app.models.setting import Setting
 from app.models.supplier import Supplier
 from app.models.user import User
@@ -238,6 +239,36 @@ async def confirm_ai_reimbursement_import(
         created_by=current_user.id,
     )
     db.add(db_reimbursement)
+    await db.flush()
+
+    # 附件：主发票文件 + 额外附件
+    order = 0
+    seen = set()
+    if db_reimbursement.file_id:
+        db.add(ReimbursementFile(
+            reimbursement_id=db_reimbursement.id,
+            file_id=db_reimbursement.file_id,
+            file_url=db_reimbursement.file_url,
+            file_name=None,
+            file_type=None,
+            file_size=None,
+            sort_order=order,
+        ))
+        seen.add(db_reimbursement.file_id)
+        order += 1
+    for f in (payload.files or []):
+        if f.file_id and f.file_id not in seen:
+            db.add(ReimbursementFile(
+                reimbursement_id=db_reimbursement.id,
+                file_id=f.file_id,
+                file_name=f.file_name,
+                file_url=f.file_url,
+                file_type=f.file_type,
+                file_size=f.file_size,
+                sort_order=order,
+            ))
+            seen.add(f.file_id)
+            order += 1
 
     await db.commit()
     await db.refresh(db_reimbursement)

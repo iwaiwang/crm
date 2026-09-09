@@ -24,7 +24,13 @@ const routes = [
         path: 'customers',
         name: 'Customers',
         component: () => import('@/views/Customers.vue'),
-        meta: { title: '客户管理' },
+        meta: { title: '客户列表' },
+      },
+      {
+        path: 'customers/map',
+        name: 'CustomerMap',
+        component: () => import('@/views/CustomerMap.vue'),
+        meta: { title: '客户分布' },
       },
       {
         path: 'contracts',
@@ -137,6 +143,17 @@ const router = createRouter({
   routes,
 })
 
+// 检查 token 是否过期
+function isTokenExpired(token) {
+  if (!token) return true
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp ? Date.now() >= payload.exp * 1000 : false
+  } catch {
+    return true
+  }
+}
+
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
@@ -147,8 +164,15 @@ router.beforeEach((to, from, next) => {
     return
   }
 
+  // Token 过期检查：清除登录态并跳转登录页
+  if (to.path !== '/login' && userStore.token && isTokenExpired(userStore.token)) {
+    userStore.logout()
+    next('/login')
+    return
+  }
+
   // 已登录访问登录页，重定向到首页
-  if (to.path === '/login' && userStore.token) {
+  if (to.path === '/login' && userStore.token && !isTokenExpired(userStore.token)) {
     next('/dashboard')
     return
   }
@@ -170,6 +194,7 @@ router.beforeEach((to, from, next) => {
       const menuMap = {
         'Dashboard': 'dashboard',
         'Customers': 'customers',
+        'CustomerMap': 'customers',
         'Contracts': 'contracts',
         'ContractNew': 'contracts',
         'ContractDetail': 'contracts',
